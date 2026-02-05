@@ -20,7 +20,9 @@ dependencies = [
     "watchdog",
     "aiosqlite",
     "python-telegram-bot",
+    "python-telegram-bot",
     "discord.py",
+    "psutil",
 ]
 
 [project.scripts]
