@@ -10,7 +10,7 @@ import sys
 import stat
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import json5
 from pydantic import BaseModel, Field
@@ -47,6 +47,11 @@ class GatewayConfig(BaseModel):
     port: int = 8000
     host: str = "127.0.0.1"
 
+class SandboxConfig(BaseModel):
+    """Configuration for the isolated Python sandbox."""
+    enabled: bool = True
+    allowed_imports: List[str] = Field(default_factory=list)
+
 class AuricConfig(BaseSettings):
     """
     Root configuration object for OpenAuric.
@@ -54,6 +59,7 @@ class AuricConfig(BaseSettings):
     debug: bool = False
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     tools: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
