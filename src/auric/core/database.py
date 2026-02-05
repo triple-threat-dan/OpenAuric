@@ -92,3 +92,13 @@ class AuditLogger:
 
                 session.add(task)
                 await session.commit()
+
+    async def get_pending_approval_task(self) -> Optional[TaskExecution]:
+        """
+        Retrieves the latest task that is in PENDING_APPROVAL status.
+        """
+        async with AsyncSession(self.engine) as session:
+            # Order by started_at desc to get the most recent one
+            statement = select(TaskExecution).where(TaskExecution.status == "PENDING_APPROVAL").order_by(TaskExecution.started_at.desc()).limit(1)
+            result = await session.exec(statement)
+            return result.one_or_none()

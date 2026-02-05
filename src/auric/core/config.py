@@ -52,6 +52,19 @@ class SandboxConfig(BaseModel):
     enabled: bool = True
     allowed_imports: List[str] = Field(default_factory=list)
 
+class TelegramConfig(BaseModel):
+    enabled: bool = False
+    token: Optional[str] = None
+
+class DiscordConfig(BaseModel):
+    enabled: bool = False
+    token: Optional[str] = None
+
+class PactsConfig(BaseModel):
+    """Configuration for platform adapters."""
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+    discord: DiscordConfig = Field(default_factory=DiscordConfig)
+
 class AuricConfig(BaseSettings):
     """
     Root configuration object for OpenAuric.
@@ -60,6 +73,7 @@ class AuricConfig(BaseSettings):
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    pacts: PactsConfig = Field(default_factory=PactsConfig)
     tools: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:

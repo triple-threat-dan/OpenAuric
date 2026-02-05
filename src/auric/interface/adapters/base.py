@@ -1,0 +1,58 @@
+from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Callable, Optional, Dict, Any, Awaitable
+
+from pydantic import BaseModel, Field
+
+class PactEvent(BaseModel):
+    """
+    Normalized message event from any platform (Telegram, Discord, CLI).
+    """
+    platform: str
+    sender_id: str
+    content: str
+    reply_to_id: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+class BasePact(ABC):
+    """
+    Abstract base class for platform adapters.
+    """
+    
+    def __init__(self):
+        self._message_handler: Optional[Callable[[PactEvent], Awaitable[None]]] = None
+
+    @abstractmethod
+    async def start(self) -> None:
+        """
+        Start the adapter (e.g., start polling or connecting to websocket).
+        """
+        pass
+
+    @abstractmethod
+    async def stop(self) -> None:
+        """
+        Stop the adapter.
+        """
+        pass
+        
+    @abstractmethod
+    async def send_message(self, target_id: str, content: str) -> None:
+        """
+        Send an outbound message to a specific user/channel.
+        """
+        pass
+
+    def on_message(self, callback: Callable[[PactEvent], Awaitable[None]]) -> None:
+        """
+        Register the callback function to handle incoming messages.
+        """
+        self._message_handler = callback
+
+    async def _emit(self, event: PactEvent) -> None:
+        """
+        Internal helper to trigger the registered callback.
+        """
+        if self._message_handler:
+            await self._message_handler(event)

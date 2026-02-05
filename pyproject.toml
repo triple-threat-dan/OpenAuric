@@ -19,6 +19,8 @@ dependencies = [
     "json5",
     "watchdog",
     "aiosqlite",
+    "python-telegram-bot",
+    "discord.py",
 ]
 
 [project.scripts]

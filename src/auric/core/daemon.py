@@ -20,6 +20,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from .config import load_config
+from .database import AuditLogger
 
 logger = logging.getLogger("auric.daemon")
 
@@ -55,7 +56,17 @@ async def run_daemon(tui_app: App, api_app: FastAPI) -> None:
     scheduler.start()
     logger.info("Scheduler started.")
 
-    # 3. Setup FastAPI (Uvicorn)
+    # 3. Setup Database & Audit Logger
+    audit_logger = AuditLogger()
+    await audit_logger.init_db()
+    
+    # 3.1 Setup Pact Manager (Omni-Channel)
+    from auric.interface.pact_manager import PactManager
+    pact_manager = PactManager(config, audit_logger, event_bus)
+    await pact_manager.start()
+    logger.info("PactManager started.")
+
+    # 4. Setup FastAPI (Uvicorn)
     # We must run Uvicorn manually to keep it in our existing asyncio loop.
     # standard uvicorn.run() blocks and creates a new loop usually.
     
@@ -72,7 +83,7 @@ async def run_daemon(tui_app: App, api_app: FastAPI) -> None:
     api_task = asyncio.create_task(server.serve())
     logger.info(f"API Server starting on {config.gateway.host}:{config.gateway.port}")
 
-    # 4. Run the TUI
+    # 5. Run the TUI
     # Textual's run_async() is a blocking call that drives the main loop.
     # It must be awaited last.
     try:
@@ -81,8 +92,11 @@ async def run_daemon(tui_app: App, api_app: FastAPI) -> None:
     except Exception as e:
         logger.critical(f"TUI crashed: {e}")
     finally:
-        # 5. Graceful Shutdown
+        # 6. Graceful Shutdown
         logger.info("Shutting down AuricDaemon...")
+        
+        # Stop PactManager
+        await pact_manager.stop()
         
         # Stop Scheduler
         scheduler.shutdown()
