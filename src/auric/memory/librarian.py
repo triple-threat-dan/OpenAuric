@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent, FileMovedEvent
@@ -167,8 +167,16 @@ class GrimoireLibrarian:
             self.event_handler.shutdown()
             
         if self.observer:
-            logger.info("Librarian stopping observer...")
-            self.observer.stop()
             self.observer.join()
             logger.info("Librarian observer stopped.")
             self.observer = None
+
+    def search(self, query: str) -> List[str]:
+        """
+        Retrieves relevant context snippets for the given query.
+        For now, this is a simple keyword search or returns nothing.
+        """
+        # TODO: Implement Vector DB search
+        # For now, we'll just return nothing to unblock RLM
+        return []
+

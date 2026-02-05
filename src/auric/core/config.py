@@ -39,6 +39,8 @@ class AgentsConfig(BaseModel):
     smart_model: str = "gemini/gemini-1.5-pro"
     fast_model: str = "gemini/gemini-1.5-flash"
     is_local: bool = False
+    max_recursion: int = 2
+    max_cost: float = 1.0
 
 class GatewayConfig(BaseModel):
     """Configuration for the API gateway."""
