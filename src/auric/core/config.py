@@ -44,7 +44,7 @@ class AgentsConfig(BaseModel):
 
 class GatewayConfig(BaseModel):
     """Configuration for the API gateway."""
-    port: int = 8000
+    port: int = 8067
     host: str = "127.0.0.1"
 
 class SandboxConfig(BaseModel):

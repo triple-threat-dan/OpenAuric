@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Arcane Library | OpenAuric</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>OPEN<span class="highlight">AURIC</span> // THE ARCANE LIBRARY</h1>
+            <div id="status-badge" class="badge">CONNECTING...</div>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Left Column: The Grimoire (Focus) -->
+            <section class="panel" id="focus-panel">
+                <h2>🔮 THE GRIMOIRE (Active Focus)</h2>
+                <div class="content" id="focus-content">
+                    <div id="prime-directive"></div>
+                    <ul id="plan-list"></ul>
+                    <div id="working-memory"></div>
+                </div>
+            </section>
+
+            <!-- Right Column: The Stream (Logs) -->
+            <section class="panel" id="log-panel">
+                <h2>📜 THE STREAM (Consciousness)</h2>
+                <div class="content scroll-box" id="log-content">
+                    <!-- Logs will be injected here -->
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer: Chat & Stats -->
+        <footer>
+            <div id="stats-bar">
+                <span id="stat-model">Model: Unknown</span> | 
+                <span id="stat-mem">Mem: --</span>
+            </div>
+            <div class="input-area">
+                <input type="text" id="chat-input" placeholder="Commune with the machine...">
+                <button id="send-btn">SEND</button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const API_URL = '/api';
+        
+        // Polling loop
+        async function updateState() {
+            try {
+                const response = await fetch(`${API_URL}/status`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                renderFocus(data.focus_state);
+                renderLogs(data.logs);
+                renderStats(data.stats);
+                
+                document.getElementById('status-badge').textContent = "ONLINE";
+                document.getElementById('status-badge').classList.add('online');
+            } catch (error) {
+                document.getElementById('status-badge').textContent = "OFFLINE";
+                document.getElementById('status-badge').classList.remove('online');
+                console.error('Fetch error:', error);
+            }
+        }
+
+        function renderFocus(focus) {
+            const container = document.getElementById('focus-content');
+            if (focus.error) {
+                container.innerHTML = `<div class="error">${focus.error}</div>`;
+                return;
+            }
+
+            // Prime Directive
+            document.getElementById('prime-directive').innerHTML = `
+                <h3>🎯 Prime Directive</h3>
+                <p>${focus.prime_directive || "Assuming direct control..."}</p>
+            `;
+
+            // Plan
+            const planList = document.getElementById('plan-list');
+            planList.innerHTML = '<h3>📋 Plan of Action</h3>';
+            if (focus.plan_steps) {
+                focus.plan_steps.forEach(step => {
+                    const li = document.createElement('li');
+                    li.className = step.completed ? 'completed' : '';
+                    li.innerHTML = `[${step.completed ? 'X' : ' '}] ${step.step}`;
+                    planList.appendChild(li);
+                });
+            }
+
+            // Memory
+            document.getElementById('working-memory').innerHTML = `
+                <h3>🧠 Working Memory</h3>
+                <pre>${focus.working_memory || ""}</pre>
+            `;
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('log-content');
+            container.innerHTML = logs.map(log => {
+                // Formatting specific log types if they are structured strings, or just dumping
+                if (typeof log === 'string' && log.includes('[ERROR]')) {
+                    return `<div class="log-entry error">${log}</div>`;
+                }
+                return `<div class="log-entry">${log}</div>`;
+            }).join('');
+            // Auto scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function renderStats(stats) {
+            document.getElementById('stat-model').textContent = `Model: ${stats.active_model}`;
+            document.getElementById('stat-mem').textContent = `Status: ${stats.status}`;
+        }
+
+        // Chat
+        async function splitMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            try {
+                await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                input.value = '';
+            } catch (e) {
+                alert("Failed to send message");
+            }
+        }
+
+        document.getElementById('send-btn').addEventListener('click', splitMessage);
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') splitMessage();
+        });
+
+        // Loop
+        setInterval(updateState, 1000);
+        updateState(); // Initial call
+    </script>
+</body>
+</html>

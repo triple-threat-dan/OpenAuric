@@ -84,9 +84,22 @@ def _unset_nested_value(data: dict, key: str) -> bool:
 
 @app.command()
 def start():
-    """Start the Auric Daemon."""
+    """Start the Auric Daemon with TUI."""
+    import asyncio
+    from auric.core.daemon import run_daemon
+    from fastapi import FastAPI
+    
     console.print("[green]Starting Auric Daemon...[/green]")
-    # Daemon start logic to be implemented in OA-104
+    
+    # Initialize FastAPI (TUI is initialized inside run_daemon if None)
+    api_app = FastAPI(title="OpenAuric API")
+    
+    try:
+        asyncio.run(run_daemon(tui_app=None, api_app=api_app))
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        console.print(f"[bold red]Fatal Error: {e}[/bold red]")
 
 @app.command()
 def stop():
@@ -111,7 +124,14 @@ def dashboard_main(ctx: typer.Context):
 @dashboard_app.command("start")
 def dashboard_start():
     """Start the dashboard UI."""
-    console.print("[green]Starting Dashboard...[/green]")
+    import webbrowser
+    config = _load_config()
+    host = _get_nested_value(config, "gateway.host") or "localhost"
+    port = _get_nested_value(config, "gateway.port") or 8067
+    
+    url = f"http://{host}:{port}"
+    console.print(f"[green]Opening Dashboard at {url}...[/green]")
+    webbrowser.open(url)
 
 @dashboard_app.command("stop")
 def dashboard_stop():
