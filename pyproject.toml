@@ -18,6 +18,7 @@ dependencies = [
     "rich",
     "json5",
     "watchdog",
+    "aiosqlite",
 ]
 
 [project.scripts]
