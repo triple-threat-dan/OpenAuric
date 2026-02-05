@@ -17,6 +17,7 @@ dependencies = [
     "chromadb",
     "rich",
     "json5",
+    "watchdog",
 ]
 
 [project.scripts]
