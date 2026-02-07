@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import pytest
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 
@@ -17,6 +18,7 @@ from auric.core.database import AuditLogger, TaskExecution
 from auric.interface.pact_manager import PactManager
 from auric.interface.adapters.base import PactEvent
 
+@pytest.mark.asyncio
 async def test_pact_manager_resume_logic():
     # Setup Mocks
     mock_config = MagicMock() # Removed spec=AuricConfig to avoid subtle introspection issues
@@ -50,6 +52,7 @@ async def test_pact_manager_resume_logic():
     assert signal["type"] == "resume_signal"
     assert signal["task_id"] == "task-123"
 
+@pytest.mark.asyncio
 async def test_pact_manager_resume_denial():
     # Setup Mocks
     mock_config = MagicMock()
@@ -83,6 +86,7 @@ async def test_pact_manager_resume_denial():
     assert signal["type"] == "cancel_signal"
     assert signal["task_id"] == "task-124"
 
+@pytest.mark.asyncio
 async def test_pact_manager_new_query():
     # Setup Mocks
     mock_config = MagicMock()

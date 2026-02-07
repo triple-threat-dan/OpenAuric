@@ -1,9 +1,15 @@
+import os
+import signal
+import sys
+import atexit
+import psutil
 import typer
 import json5
 import json
 from pathlib import Path
 from typing import Any, Optional
 from rich.console import Console
+from rich.syntax import Syntax
 from rich.syntax import Syntax
 
 app = typer.Typer(help="OpenAuric: The Recursive Agentic Warlock")
@@ -16,6 +22,7 @@ app.add_typer(config_app, name="config")
 console = Console()
 
 CONFIG_PATH = Path("~/.auric/auric.json").expanduser()
+PID_FILE = Path("~/.auric/auric.pid").expanduser()
 
 # --- Config Helpers ---
 
@@ -89,7 +96,30 @@ def start():
     from auric.core.daemon import run_daemon
     from fastapi import FastAPI
     
-    console.print("[green]Starting Auric Daemon...[/green]")
+    # --- PID File Logic ---
+    if PID_FILE.exists():
+        try:
+            old_pid = int(PID_FILE.read_text().strip())
+            if psutil.pid_exists(old_pid):
+                console.print(f"[bold red]Daemon potentially already running (PID {old_pid}).[/bold red]")
+                console.print("Run 'auric stop' or delete ~/.auric/auric.pid if this is an error.")
+                raise typer.Exit(1)
+            else:
+                console.print(f"[yellow]Found stale PID file ({old_pid}). Overwriting...[/yellow]")
+        except ValueError:
+             console.print("[yellow]Invalid PID file. Overwriting...[/yellow]")
+
+    current_pid = os.getpid()
+    PID_FILE.write_text(str(current_pid))
+    
+    def cleanup_pid():
+        if PID_FILE.exists():
+            PID_FILE.unlink()
+            
+    atexit.register(cleanup_pid)
+    # ----------------------
+    
+    console.print(f"[green]Starting Auric Daemon (PID {current_pid})...[/green]")
     
     # Initialize FastAPI (TUI is initialized inside run_daemon if None)
     api_app = FastAPI(title="OpenAuric API")
@@ -97,15 +127,55 @@ def start():
     try:
         asyncio.run(run_daemon(tui_app=None, api_app=api_app))
     except KeyboardInterrupt:
-        pass
+        pass # Clean exit handled by finally/atexit
     except Exception as e:
         console.print(f"[bold red]Fatal Error: {e}[/bold red]")
+    finally:
+        cleanup_pid()
 
 @app.command()
-def stop():
+def stop(force: bool = typer.Option(False, "--force", "-f", help="Force kill the process")):
     """Stop the Auric Daemon."""
-    console.print("[yellow]Stopping Auric Daemon...[/yellow]")
-    # Signal logic to be implemented in OA-104
+    if not PID_FILE.exists():
+        console.print("[yellow]No PID file found. Is the daemon running?[/yellow]")
+        return
+
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except ValueError:
+        console.print("[red]Invalid PID file content. Removing...[/red]")
+        PID_FILE.unlink()
+        return
+
+    if not psutil.pid_exists(pid):
+        console.print(f"[yellow]Process {pid} not found. Removing stale PID file...[/yellow]")
+        PID_FILE.unlink()
+        return
+
+    console.print(f"[yellow]Stopping Auric Daemon (PID {pid})...[/yellow]")
+    try:
+        proc = psutil.Process(pid)
+        proc.terminate()
+        
+        try:
+            proc.wait(timeout=5)
+            console.print("[green]Daemon stopped successfully.[/green]")
+        except psutil.TimeoutExpired:
+            if force:
+                console.print("[red]Process unresponsive. Force killing...[/red]")
+                proc.kill()
+                console.print("[green]Daemon killed.[/green]")
+            else:
+                console.print("[red]Process timed out. Use --force to kill.[/red]")
+                raise typer.Exit(1)
+                
+    except psutil.NoSuchProcess:
+        console.print("[yellow]Process already gone.[/yellow]")
+    except psutil.AccessDenied:
+        console.print("[bold red]Access Denied: Cannot stop process.[/bold red]")
+    finally:
+        if PID_FILE.exists():
+            PID_FILE.unlink()
 
 @app.command()
 def restart():

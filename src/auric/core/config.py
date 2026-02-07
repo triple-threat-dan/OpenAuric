@@ -65,6 +65,13 @@ class PactsConfig(BaseModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
 
+class LLMKeys(BaseModel):
+    """API keys for LLM providers."""
+    openai: Optional[str] = None
+    anthropic: Optional[str] = None
+    gemini: Optional[str] = None
+    openrouter: Optional[str] = None
+
 class AuricConfig(BaseSettings):
     """
     Root configuration object for OpenAuric.
@@ -74,6 +81,7 @@ class AuricConfig(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     pacts: PactsConfig = Field(default_factory=PactsConfig)
+    keys: LLMKeys = Field(default_factory=LLMKeys) 
     tools: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
@@ -131,9 +139,15 @@ class ConfigLoader:
             desired_mode = 0o600
             
             if (current_mode & 0o077) != 0: # Checks if group or others have any permissions
-                logger.warning(f"Insecure config file permissions detected: {oct(current_mode)}. strictly enforcing 0600.")
-                os.chmod(path, desired_mode)
-                logger.info(f"Fixed permissions for {path} to 0600.")
+                # On Windows, os.chmod is limited. We log but don't force if it fails or looks weird.
+                if sys.platform == "win32":
+                    # Windows chmod doesn't support 0o600 fully (only read-only attribute).
+                    # We skip the specific warning/enforcement to avoid noise/errors unless we implement ACLs.
+                    pass 
+                else:
+                    logger.warning(f"Insecure config file permissions detected: {oct(current_mode)}. strictly enforcing 0600.")
+                    os.chmod(path, desired_mode)
+                    logger.info(f"Fixed permissions for {path} to 0600.")
                 
         except Exception as e:
             logger.warning(f"Could not enforce permissions on {path}: {e}")

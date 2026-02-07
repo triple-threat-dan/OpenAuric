@@ -123,10 +123,7 @@ class RLMEngine:
             {"role": "user", "content": user_query}
         ]
 
-        # In a real implementation, we would define tools here.
-        # For this ticket, we mock the recursive capability logic if no tool definitions are present yet,
-        # or we assume the LLMGateway handles tool definitions if passed.
-        # But per requirements, we need to handle `spawn_sub_agent`. 
+        # Per requirements, we need to handle `spawn_sub_agent`. 
         # Since we don't have a rigid Tool definition system in this file yet (it's injected via prompt or gateway),
         # we will assume the LLM might return a tool call in the text or structured output.
         # For simplicity and sticking to the prompt's "Sub-agents receive a filtered snapshot",

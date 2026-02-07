@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Arcane Library | OpenAuric</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
+
 <body>
     <div class="container">
         <!-- Header -->
@@ -16,29 +19,40 @@
 
         <!-- Main Content -->
         <main>
-            <!-- Left Column: The Grimoire (Focus) -->
-            <section class="panel" id="focus-panel">
-                <h2>🔮 THE GRIMOIRE (Active Focus)</h2>
-                <div class="content" id="focus-content">
-                    <div id="prime-directive"></div>
-                    <ul id="plan-list"></ul>
-                    <div id="working-memory"></div>
+            <!-- Chat Panel (The Void) - Takes up most space -->
+            <section class="panel" id="chat-panel">
+                <h2>🌌 THE VOID (Communion)</h2>
+                <div class="content scroll-box" id="chat-content">
+                    <!-- Chat history injected here -->
                 </div>
             </section>
 
-            <!-- Right Column: The Stream (Logs) -->
-            <section class="panel" id="log-panel">
-                <h2>📜 THE STREAM (Consciousness)</h2>
-                <div class="content scroll-box" id="log-content">
-                    <!-- Logs will be injected here -->
-                </div>
-            </section>
+            <!-- Sidebar (Grimoire + Logs) -->
+            <div class="sidebar">
+                <!-- Top Right: The Grimoire (Focus) -->
+                <section class="panel" id="focus-panel">
+                    <h2>🔮 THE GRIMOIRE (Focus)</h2>
+                    <div class="content" id="focus-content">
+                        <div id="prime-directive"></div>
+                        <ul id="plan-list"></ul>
+                        <div id="working-memory"></div>
+                    </div>
+                </section>
+
+                <!-- Bottom Right: The Stream (Logs) -->
+                <section class="panel" id="log-panel">
+                    <h2>📜 THE STREAM (Logs)</h2>
+                    <div class="content scroll-box" id="log-content">
+                        <!-- Logs will be injected here -->
+                    </div>
+                </section>
+            </div>
         </main>
 
         <!-- Footer: Chat & Stats -->
         <footer>
             <div id="stats-bar">
-                <span id="stat-model">Model: Unknown</span> | 
+                <span id="stat-model">Model: Unknown</span> |
                 <span id="stat-mem">Mem: --</span>
             </div>
             <div class="input-area">
@@ -50,18 +64,19 @@
 
     <script>
         const API_URL = '/api';
-        
+
         // Polling loop
         async function updateState() {
             try {
                 const response = await fetch(`${API_URL}/status`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
-                
+
                 renderFocus(data.focus_state);
+                renderChat(data.chat_history);
                 renderLogs(data.logs);
                 renderStats(data.stats);
-                
+
                 document.getElementById('status-badge').textContent = "ONLINE";
                 document.getElementById('status-badge').classList.add('online');
             } catch (error) {
@@ -101,6 +116,42 @@
                 <h3>🧠 Working Memory</h3>
                 <pre>${focus.working_memory || ""}</pre>
             `;
+        }
+
+        function renderChat(history) {
+            const container = document.getElementById('chat-content');
+            if (!history) return;
+
+            const html = history.map(msg => {
+                const level = msg.level || "UNKNOWN";
+                const text = msg.message || "";
+
+                let className = "chat-entry";
+                let icon = "";
+
+                if (level === "USER") {
+                    className += " user";
+                    icon = "👤";
+                } else if (level === "AGENT") {
+                    className += " agent";
+                    icon = "🧙‍♂️";
+                } else if (level === "THOUGHT") {
+                    className += " thought";
+                    icon = "💭";
+                }
+
+                // Parse Markdown for message content
+                const content = marked.parse(text);
+
+                return `<div class="${className}"><span class="icon">${icon}</span> <div class="text markdown-content">${content}</div></div>`;
+            }).join('');
+
+            // Only update if changed to avoid flicker (simple check length?)
+            // For now, just simplistic replace
+            if (container.innerHTML !== html) {
+                container.innerHTML = html;
+                container.scrollTop = container.scrollHeight;
+            }
         }
 
         function renderLogs(logs) {
@@ -149,4 +200,5 @@
         updateState(); // Initial call
     </script>
 </body>
+
 </html>

@@ -15,10 +15,11 @@ class PactManager:
     Omni-Channel Manager that unifies Telegram, Discord, and other inputs.
     Handles HITL (Human-in-the-Loop) Resume logic.
     """
-    def __init__(self, config: AuricConfig, audit_logger: AuditLogger, event_bus: asyncio.Queue):
+    def __init__(self, config: AuricConfig, audit_logger: AuditLogger, command_bus: asyncio.Queue, event_bus: asyncio.Queue):
         self.config = config
         self.audit = audit_logger
-        self.bus = event_bus
+        self.command_bus = command_bus
+        self.event_bus = event_bus
         self.adapters: Dict[str, BasePact] = {}
 
     async def start(self) -> None:
@@ -67,9 +68,8 @@ class PactManager:
                 await self.audit.update_status(pending_task.id, "RUNNING")
                 
                 # Signal Daemon/RLM to wake up
-                # We assume the event bus carries simple dicts or objects.
                 # 'resume_signal' indicates a HITL resolution.
-                await self.bus.put({
+                await self.command_bus.put({
                     "type": "resume_signal",
                     "task_id": pending_task.id,
                     "platform": event.platform,
@@ -89,7 +89,7 @@ class PactManager:
                  if self._is_denial(event.content):
                      logger.info(f"User denied task {pending_task.id} via {event.platform}")
                      await self.audit.update_status(pending_task.id, "CANCELLED") # Or FAILED
-                     await self.bus.put({
+                     await self.command_bus.put({
                         "type": "cancel_signal",
                         "task_id": pending_task.id
                      })
@@ -100,7 +100,9 @@ class PactManager:
 
         # 2. Standard User Query (No pending task or unrelated message)
         # Push to queue for the brain to process
-        await self.bus.put({
+        # 2. Standard User Query (No pending task or unrelated message)
+        # Push to queue for the brain to process
+        await self.command_bus.put({
             "type": "user_query",
             "event": event
         })

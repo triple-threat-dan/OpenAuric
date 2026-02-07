@@ -66,8 +66,9 @@ class AuricTUI(App):
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, event_bus: asyncio.Queue, focus_file: Path):
+    def __init__(self, command_bus: asyncio.Queue, event_bus: asyncio.Queue, focus_file: Path):
         super().__init__()
+        self.command_bus = command_bus
         self.event_bus = event_bus
         self.focus_manager = FocusManager(focus_file)
         self.last_focus_content = ""
@@ -183,7 +184,7 @@ class AuricTUI(App):
                 "level": "USER",
                 "message": event.value
             }
-            await self.event_bus.put(msg)
+            await self.command_bus.put(msg)
             
             # Clear input
             event.input.value = ""

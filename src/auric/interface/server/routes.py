@@ -20,7 +20,8 @@ class ChatRequest(BaseModel):
 
 class StatusResponse(BaseModel):
     focus_state: Dict[str, Any]
-    logs: List[str] # Last 50 lines
+    logs: List[str] # Last 100 lines
+    chat_history: List[Dict[str, Any]] # Last 50 messages
     stats: Dict[str, str]
 
 # --- Routes ---
@@ -47,22 +48,27 @@ async def get_status(request: Request):
     except Exception as e:
         focus_data = {"error": str(e)}
 
-    # 2. Get Logs
-    # In a real system, we'd tap into a shared ring buffer.
-    # For now, we'll return a placeholder or implement a simple buffer in the app state later.
-    logs = getattr(request.app.state, "log_buffer", ["System initialized."])
+    # 2. Get Logs & Chat History
+    # We use the buffers injected by the daemon
+    logs = list(getattr(request.app.state, "web_log_buffer", ["System initialized."]))
+    chat_history = list(getattr(request.app.state, "web_chat_history", []))
 
     # 3. Get Stats
-    # Placeholder
+    config = getattr(request.app.state, "config", None)
+    active_model = "Local (Default)"
+    if config:
+        active_model = config.agents.smart_model
+
     stats = {
         "status": "ONLINE",
-        "active_model": "Local",
+        "active_model": active_model,
         "memory_usage": "N/A"
     }
 
     return StatusResponse(
         focus_state=focus_data,
         logs=logs,
+        chat_history=chat_history,
         stats=stats
     )
 
@@ -71,16 +77,16 @@ async def chat(request: Request, chat_req: ChatRequest):
     """
     pushes a user message to the event bus.
     """
-    event_bus: asyncio.Queue = getattr(request.app.state, "event_bus", None)
-    if not event_bus:
-        raise HTTPException(status_code=503, detail="Event bus not available.")
+    command_bus: asyncio.Queue = getattr(request.app.state, "command_bus", None)
+    if not command_bus:
+        raise HTTPException(status_code=503, detail="Command bus not available.")
     
     msg = {
         "level": "USER",
         "message": chat_req.message,
         "source": "WEB"
     }
-    await event_bus.put(msg)
+    await command_bus.put(msg)
     return {"status": "Message sent"}
 
 # We'll mount the static files in the main daemon setup.

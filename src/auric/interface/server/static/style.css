@@ -2,7 +2,8 @@
     --bg-color: #0d0d0d;
     --panel-bg: #1a1a1a;
     --text-color: #e0e0e0;
-    --accent-color: #00ff9d; /* Cyan/Green Neon */
+    --accent-color: #00ff9d;
+    /* Cyan/Green Neon */
     --accent-dim: #005f3b;
     --error-color: #ff3333;
     --border-color: #333;
@@ -67,17 +68,39 @@ main {
     display: flex;
     flex: 1;
     gap: 10px;
-    overflow: hidden; /* Prevent body scroll */
+    overflow: hidden;
+    /* Prevent body scroll */
+}
+
+/* Chat Panel takes 75% width */
+#chat-panel {
+    flex: 3;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Sidebar takes 25% width */
+.sidebar {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
 }
 
 .panel {
     background: var(--panel-bg);
     border: 1px solid var(--border-color);
     padding: 15px;
-    flex: 1;
+    /* flex: 1;  Removed generic flex: 1 to allow specific sizing */
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+/* Panels inside sidebar share vertical space */
+.sidebar .panel {
+    flex: 1;
 }
 
 .panel h2 {
@@ -122,12 +145,108 @@ main {
     border: 1px dashed #444;
 }
 
+/* Chat Panel Specifics */
+.chat-entry {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    line-height: 1.4;
+}
+
+.chat-entry .icon {
+    font-size: 1.2rem;
+}
+
+.chat-entry.user {
+    flex-direction: row-reverse;
+    background: #00331f;
+    /* Dark Green */
+    border: 1px solid var(--accent-dim);
+    margin-left: 20%;
+}
+
+.chat-entry.agent {
+    background: #111;
+    border: 1px solid #333;
+    margin-right: 20%;
+}
+
+.chat-entry.thought {
+    color: #888;
+    font-style: italic;
+    font-size: 0.85rem;
+    border: 1px dashed #444;
+    background: transparent;
+}
+
+/* Markdown Content Styling */
+.markdown-content {
+    width: 100%;
+    overflow-wrap: break-word;
+}
+
+.markdown-content p {
+    margin: 0 0 10px 0;
+}
+
+.markdown-content p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-content pre {
+    background: #000;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+    border: 1px solid #333;
+    margin: 10px 0;
+}
+
+.markdown-content code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+}
+
+.markdown-content pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+    margin: 5px 0;
+    padding-left: 20px;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+    margin: 10px 0 5px 0;
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
 /* Log Panel Specifics */
 .log-entry {
     font-family: var(--font-mono);
-    font-size: 0.9rem;
+    font-size: 0.8rem;
+    /* Slightly smaller font for logs */
     padding: 2px 0;
     border-bottom: 1px solid #222;
+
+    /* Truncation (space efficiency) */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 .log-entry.error {

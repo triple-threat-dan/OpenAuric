@@ -24,6 +24,9 @@ class LLMGateway:
         self.smart_model_id = config.agents.smart_model
         self.fast_model_id = config.agents.fast_model
         
+        # Store keys for access during completion
+        self.keys = config.keys
+        
         # We can also check the global 'is_local' flag from config, 
         # but per-model checks are more robust if mixing local/remote.
         self.is_global_local = config.agents.is_local
@@ -67,6 +70,23 @@ class LLMGateway:
             
         check_local = self.is_local_model(model)
         
+        # Determine API key based on provider
+        api_key = None
+        try:
+            # We try to guess user intent if they provided a key in config
+            # We try to guess user intent if they provided a key in config
+            if self.keys.openrouter and "openrouter" in model:
+                api_key = self.keys.openrouter
+            elif self.keys.openai and "gpt" in model:
+                api_key = self.keys.openai
+            elif self.keys.anthropic and "claude" in model:
+                api_key = self.keys.anthropic
+            elif self.keys.gemini and "gemini" in model:
+                api_key = self.keys.gemini
+        except Exception:
+            # Fallback to env vars handled by litellm
+            pass
+        
         try:
             if check_local:
                 logger.debug(f"Acquiring local semaphore for model: {model}")
@@ -75,6 +95,7 @@ class LLMGateway:
                     response = await litellm.acompletion(
                         model=model,
                         messages=messages,
+                        api_key=api_key,
                         **kwargs
                     )
                     return response
@@ -84,6 +105,7 @@ class LLMGateway:
                 response = await litellm.acompletion(
                     model=model,
                     messages=messages,
+                    api_key=api_key,
                     **kwargs
                 )
                 return response
