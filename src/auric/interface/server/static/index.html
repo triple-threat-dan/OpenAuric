@@ -118,9 +118,16 @@
             `;
         }
 
+        let lastChatHistoryJSON = "";
+
         function renderChat(history) {
             const container = document.getElementById('chat-content');
             if (!history) return;
+
+            // 1. Check if user is near bottom BEFORE updating
+            const threshold = 50; // pixels
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+            const isFirstLoad = container.innerHTML.trim() === "";
 
             const html = history.map(msg => {
                 const level = msg.level || "UNKNOWN";
@@ -138,33 +145,61 @@
                 } else if (level === "THOUGHT") {
                     className += " thought";
                     icon = "💭";
+                } else if (level === "UNKNOWN") {
+                    // Try to infer from text or just default
+                    if (text.startsWith("Thinking")) {
+                        className += " thought";
+                        icon = "💭";
+                    }
                 }
 
                 // Parse Markdown for message content
-                const content = marked.parse(text);
+                // Ensure marked is available
+                const content = (typeof marked !== 'undefined') ? marked.parse(text) : text;
 
                 return `<div class="${className}"><span class="icon">${icon}</span> <div class="text markdown-content">${content}</div></div>`;
             }).join('');
 
-            // Only update if changed to avoid flicker (simple check length?)
-            // For now, just simplistic replace
-            if (container.innerHTML !== html) {
+            // Update if JSON changed
+            const currentJSON = JSON.stringify(history);
+            if (currentJSON !== lastChatHistoryJSON) {
+                lastChatHistoryJSON = currentJSON;
                 container.innerHTML = html;
-                container.scrollTop = container.scrollHeight;
+
+                // 2. Only auto-scroll if user was already at bottom OR it's the first load
+                if (isNearBottom || isFirstLoad) {
+                    container.scrollTop = container.scrollHeight;
+                }
             }
         }
 
+        let lastLogJSON = "";
+
         function renderLogs(logs) {
             const container = document.getElementById('log-content');
-            container.innerHTML = logs.map(log => {
-                // Formatting specific log types if they are structured strings, or just dumping
+
+            // Smart Scroll for Logs too
+            const threshold = 50;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+            const isFirstLoad = container.innerHTML.trim() === "";
+
+            const html = logs.map(log => {
                 if (typeof log === 'string' && log.includes('[ERROR]')) {
                     return `<div class="log-entry error">${log}</div>`;
                 }
                 return `<div class="log-entry">${log}</div>`;
             }).join('');
-            // Auto scroll to bottom
-            container.scrollTop = container.scrollHeight;
+
+            // Update if JSON changed
+            const currentJSON = JSON.stringify(logs);
+            if (currentJSON !== lastLogJSON) {
+                lastLogJSON = currentJSON;
+
+                container.innerHTML = html;
+                if (isNearBottom || isFirstLoad) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
         }
 
         function renderStats(stats) {

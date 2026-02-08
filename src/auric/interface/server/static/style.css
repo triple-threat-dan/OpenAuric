@@ -168,17 +168,23 @@ main {
 }
 
 .chat-entry.agent {
-    background: #111;
-    border: 1px solid #333;
+    border: 1px solid #004488;
+    /* Dim Blue Border */
+    background: #050a14;
+    /* Very Dark Blue Background */
     margin-right: 20%;
+    color: #f0f0f0;
 }
 
 .chat-entry.thought {
-    color: #888;
+    background: #1a0520;
+    /* Deep Purple */
+    border: 1px dashed #7d00aa;
+    /* Neon Purple */
+    color: #ad00ec;
+    /* Light Blue Text */
     font-style: italic;
     font-size: 0.85rem;
-    border: 1px dashed #444;
-    background: transparent;
 }
 
 /* Markdown Content Styling */

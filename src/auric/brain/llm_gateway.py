@@ -4,7 +4,9 @@ import logging
 from typing import List, Dict, Any, Optional
 
 import litellm
+import time
 from auric.core.config import AuricConfig
+from auric.core.database import AuditLogger, LLMInteraction
 
 logger = logging.getLogger("auric.brain.gateway")
 
@@ -16,8 +18,9 @@ class LLMGateway:
     Enforces resource constraints for local hardware by serializing requests.
     """
 
-    def __init__(self, config: AuricConfig):
+    def __init__(self, config: AuricConfig, audit_logger: Optional[AuditLogger] = None):
         self.config = config
+        self.audit_logger = audit_logger
         self._local_semaphore = asyncio.Semaphore(1)
         
         # Cache model names from config for easy access
@@ -88,6 +91,9 @@ class LLMGateway:
             pass
         
         try:
+            start_time = time.time()
+            response = None
+            
             if check_local:
                 logger.debug(f"Acquiring local semaphore for model: {model}")
                 async with self._local_semaphore:
@@ -98,7 +104,6 @@ class LLMGateway:
                         api_key=api_key,
                         **kwargs
                     )
-                    return response
             else:
                 # Concurrent execution for remote models
                 logger.debug(f"Calling remote model: {model}")
@@ -108,7 +113,33 @@ class LLMGateway:
                     api_key=api_key,
                     **kwargs
                 )
-                return response
+            
+            duration = (time.time() - start_time) * 1000
+            
+            # Log Interaction
+            if self.audit_logger and response:
+                try:
+                    usage = response.usage if hasattr(response, "usage") else None
+                    p_tokens = usage.prompt_tokens if usage else 0
+                    c_tokens = usage.completion_tokens if usage else 0
+                    cost = response._hidden_params.get("response_cost", 0.0) if hasattr(response, "_hidden_params") else 0.0
+                    
+                    content = response.choices[0].message.content if response.choices else ""
+                    
+                    interaction = LLMInteraction(
+                        model=model,
+                        input_messages=messages, # Pydantic will serialize this to Json
+                        output_content=content or "",
+                        prompt_tokens=p_tokens,
+                        completion_tokens=c_tokens,
+                        total_cost=cost,
+                        duration_ms=duration
+                    )
+                    await self.audit_logger.log_llm(interaction)
+                except Exception as log_err:
+                    logger.error(f"Failed to log LLM interaction: {log_err}")
+
+            return response
                 
         except Exception as e:
             logger.error(f"LLM Gateway Error ({model}): {e}")

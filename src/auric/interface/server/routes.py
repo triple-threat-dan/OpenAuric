@@ -51,7 +51,27 @@ async def get_status(request: Request):
     # 2. Get Logs & Chat History
     # We use the buffers injected by the daemon
     logs = list(getattr(request.app.state, "web_log_buffer", ["System initialized."]))
-    chat_history = list(getattr(request.app.state, "web_chat_history", []))
+    
+    # Try to get persistent history from DB
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    chat_history = []
+    
+    if audit_logger:
+        try:
+            db_messages = await audit_logger.get_chat_history(limit=50)
+            # Convert DB model to dict format expected by frontend
+            for msg in db_messages:
+                chat_history.append({
+                    "level": msg.role,
+                    "message": msg.content,
+                    "source": "DB" # Or infer from role
+                })
+        except Exception as e:
+            chat_history.append({"level": "ERROR", "message": f"Failed to load history: {e}"})
+    
+    if not chat_history:
+        # Fallback to memory if DB empty or unavailable
+        chat_history = list(getattr(request.app.state, "web_chat_history", []))
 
     # 3. Get Stats
     config = getattr(request.app.state, "config", None)

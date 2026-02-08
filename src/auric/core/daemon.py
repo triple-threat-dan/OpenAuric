@@ -60,6 +60,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     api_app.state.web_chat_history = web_chat_history
     api_app.state.web_log_buffer = web_log_buffer
     api_app.state.config = config
+    # We will inject audit_logger later after init
 
     # 1.1 Configure API App (Routes & Static)
     # Important: Include explicit routers BEFORE mounting catch-all StaticFiles at root "/"
@@ -87,6 +88,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     # 3. Setup Database & Audit Logger
     audit_logger = AuditLogger()
     await audit_logger.init_db()
+    api_app.state.audit_logger = audit_logger
     
     # 3.1 Setup Pact Manager (Omni-Channel)
     from auric.interface.pact_manager import PactManager
@@ -136,7 +138,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     from auric.memory.focus_manager import FocusManager
     from auric.brain.rlm import RLMEngine
 
-    gateway = LLMGateway(config)
+    gateway = LLMGateway(config, audit_logger=audit_logger)
     
     librarian = GrimoireLibrarian()
     librarian.start()
@@ -175,7 +177,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                 else:
                     console.print(str(msg))
                 
-                # 2. Store in Web Buffers
+                # 2. Store in Web Buffers & Database
                 if isinstance(msg, dict):
                      level = msg.get("level")
                      text = msg.get("message", str(msg))
@@ -186,6 +188,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      # Chat History filters
                      if level in ("USER", "AGENT", "THOUGHT"):
                          web_chat_history.append(msg)
+                         # Persist to DB
+                         await audit_logger.log_chat(role=level, content=str(text))
                          
                 else:
                     # Raw string
