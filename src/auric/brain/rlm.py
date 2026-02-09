@@ -75,12 +75,14 @@ class RLMEngine:
         config: AuricConfig,
         gateway: LLMGateway,
         librarian: GrimoireLibrarian,
-        focus_manager: FocusManager
+        focus_manager: FocusManager,
+        pact_manager: Any = None # Typed as Any to avoid circular import for now
     ):
         self.config = config
         self.gateway = gateway
         self.librarian = librarian
         self.focus_manager = focus_manager
+        self.pact_manager = pact_manager
         
         self.session_cost = 0.0
         self.recursion_guard = RecursionGuard(config.agents.max_recursion)
@@ -135,7 +137,7 @@ class RLMEngine:
                 tier="smart",
                 # We would verify tools here, e.g. tools=[spawn_sub_agent_schema]
             )
-        except Exception as e:
+        except Exception as e:   
             logger.error(f"LLM Call Failed: {e}")
             raise
 
@@ -166,11 +168,27 @@ class RLMEngine:
                     # RECURSION HAPPENS HERE
                     sub_result = await self.think(instruction, depth=depth + 1)
                     
-                    # Inject result back (in a real chat loop, we'd append to messages and call again)
-                    # For this single-turn `think` method, we might just return the result or 
-                    # create a new context. 
-                    # Returning the sub-agent's result combined with current might be expected.
+                    # Inject result back
                     return f"Sub-Agent Result: {sub_result}\n\nParent Analysis: {content}"
+                
+                # Dynamic Tool Execution for Pacts
+                elif self.pact_manager:
+                    # Generic Pact Tool Execution
+                    try:
+                        # Attempt to execute via PactManager
+                        # We don't filter by name here, we let PactManager decide if it owns the tool
+                        # But we should probably check if it looks like a tool call we know?
+                        # RLM doesn't know the tool names unless we cache them.
+                        # However, based on the prompt, we just want to delegate.
+                        try:
+                            result = await self.pact_manager.execute_tool(fn_name, args)
+                            return f"Tool {fn_name} executed successfully: {result}"
+                        except ValueError:
+                             # Tool not found in pacts, maybe it's something else?
+                             pass
+                    except Exception as e:
+                        logger.error(f"Failed to execute {fn_name}: {e}")
+                        return f"Error executing {fn_name}: {e}"
         
         return content
 
@@ -218,6 +236,12 @@ You have access to the following tools. Use them to solve the user's request.
   Use this to delegate complex sub-tasks to a recursive instance of yourself. 
   Do not use if the task is simple.
 """)
+        # Inject Pact Tools
+        if self.pact_manager:
+            pact_tools = self.pact_manager.get_all_tools_definitions()
+            if pact_tools:
+                parts.append(pact_tools)
+        
 
         # 6. The Memory (Snapshot)
         if task_context.relevant_snippets:

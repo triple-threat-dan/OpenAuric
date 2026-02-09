@@ -59,6 +59,8 @@ class TelegramConfig(BaseModel):
 class DiscordConfig(BaseModel):
     enabled: bool = False
     token: Optional[str] = None
+    allowed_channels: List[str] = Field(default_factory=list)
+    allowed_users: List[str] = Field(default_factory=list)
 
 class PactsConfig(BaseModel):
     """Configuration for platform adapters."""

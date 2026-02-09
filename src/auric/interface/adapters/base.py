@@ -56,3 +56,23 @@ class BasePact(ABC):
         """
         if self._message_handler:
             await self._message_handler(event)
+
+    def get_tools_definition(self) -> str:
+        """
+        Returns the markdown explanation of tools this pact provides.
+        Optional override for pacts without tools.
+        """
+        return ""
+
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns a list of tool names this pact handles (for routing).
+        e.g. ['discord_send_dm', 'discord_send_channel_message']
+        """
+        return []
+
+    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        """
+        Executes a tool if this pact owns it.
+        """
+        raise NotImplementedError(f"Tool {tool_name} not implemented in {self.__class__.__name__}")

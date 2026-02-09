@@ -155,7 +155,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
         config=config,
         gateway=gateway,
         librarian=librarian,
-        focus_manager=focus_manager
+        focus_manager=focus_manager,
+        pact_manager=pact_manager
     )
 
     # 7. Start Brain Loop & Dispatcher

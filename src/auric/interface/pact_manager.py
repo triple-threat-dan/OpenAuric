@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 
 from auric.core.config import AuricConfig
 from auric.core.database import AuditLogger
@@ -35,7 +35,11 @@ class PactManager:
 
         # Discord
         if self.config.pacts.discord.enabled and self.config.pacts.discord.token:
-            discord = DiscordPact(token=self.config.pacts.discord.token)
+            discord = DiscordPact(
+                token=self.config.pacts.discord.token,
+                allowed_channels=self.config.pacts.discord.allowed_channels,
+                allowed_users=self.config.pacts.discord.allowed_users
+            )
             discord.on_message(self.handle_message)
             self.adapters["discord"] = discord
             await discord.start()
@@ -106,6 +110,61 @@ class PactManager:
             "type": "user_query",
             "event": event
         })
+
+    
+    # ==========================
+    # Tool Abstraction Methods
+    # ==========================
+
+    def get_all_tools_definitions(self) -> str:
+        """
+        Aggregates tool definitions from all enabled pacts.
+        """
+        definitions = []
+        for name, adapter in self.adapters.items():
+            defs = adapter.get_tools_definition()
+            if defs:
+                definitions.append(defs)
+        return "\n\n".join(definitions)
+
+    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        """
+         routes execution to the correct adapter.
+        """
+        # Linear search for now, could optimize with a map
+        for name, adapter in self.adapters.items():
+            if tool_name in adapter.get_tool_names():
+                try:
+                    return await adapter.execute_tool(tool_name, args)
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name} on pact {name}: {e}")
+                    raise
+        
+        raise ValueError(f"Tool {tool_name} not found in any active pact.")
+
+    # ==========================
+    # Tool Abstraction Methods
+    # ==========================
+
+    def get_all_tools_definitions(self) -> str:
+        """
+        Aggregates tool definitions from all enabled pacts.
+        """
+        definitions = []
+        for name, adapter in self.adapters.items():
+            defs = adapter.get_tools_definition()
+            if defs:
+                definitions.append(defs)
+        return "\n\n".join(definitions)
+
+    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        # Linear search for now, could optimize with a map
+        for name, adapter in self.adapters.items():
+            if tool_name in adapter.get_tool_names():
+                logger.info(f"Executing tool {tool_name} via {name} pact")
+                return await adapter.execute_tool(tool_name, args)
+        
+        raise ValueError(f"Tool {tool_name} not found in any active pact.")
 
     def _is_approval(self, text: str) -> bool:
         """
