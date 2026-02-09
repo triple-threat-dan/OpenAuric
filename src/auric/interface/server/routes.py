@@ -4,6 +4,7 @@ API Routes for the Arcane Library (Web Dashboard).
 import asyncio
 from typing import Dict, Any, List
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
@@ -23,6 +24,12 @@ class StatusResponse(BaseModel):
     logs: List[str] # Last 100 lines
     chat_history: List[Dict[str, Any]] # Last 50 messages
     stats: Dict[str, str]
+    current_session_id: str = None
+
+class SessionSummary(BaseModel):
+    session_id: str
+    last_active: str = None
+    message_count: int
 
 # --- Routes ---
 
@@ -56,9 +63,12 @@ async def get_status(request: Request):
     audit_logger = getattr(request.app.state, "audit_logger", None)
     chat_history = []
     
+    current_sid = getattr(request.app.state, "current_session_id", None)
+    
     if audit_logger:
         try:
-            db_messages = await audit_logger.get_chat_history(limit=50)
+            # FIX: Filter by current session ID to prevent bleeding
+            db_messages = await audit_logger.get_chat_history(limit=50, session_id=current_sid)
             # Convert DB model to dict format expected by frontend
             for msg in db_messages:
                 chat_history.append({
@@ -89,8 +99,56 @@ async def get_status(request: Request):
         focus_state=focus_data,
         logs=logs,
         chat_history=chat_history,
-        stats=stats
+        stats=stats,
+        current_session_id=getattr(request.app.state, "current_session_id", None)
     )
+
+@router.get("/api/sessions", response_model=List[SessionSummary])
+async def get_sessions(request: Request):
+    """Returns a list of all chat sessions."""
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    if not audit_logger:
+        return []
+    try:
+        sessions = await audit_logger.get_sessions()
+        return sessions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/chat/{session_id}")
+async def get_session_chat(request: Request, session_id: str):
+    """Returns the chat history for a specific session."""
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    if not audit_logger:
+         return []
+    
+    try:
+        db_messages = await audit_logger.get_chat_history(limit=50, session_id=session_id)
+        chat_history = []
+        for msg in db_messages:
+            chat_history.append({
+                "level": msg.role,
+                "message": msg.content,
+                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                "source": "DB"
+            })
+        return chat_history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/sessions/new")
+async def new_session(request: Request):
+    """Starts a new chat session."""
+    new_id = str(uuid4())
+    request.app.state.current_session_id = new_id
+    
+    # Clear in-memory history so the UI starts fresh
+    # (The old history is safely in DB)
+    chat_history = getattr(request.app.state, "web_chat_history", None)
+    if chat_history is not None:
+        chat_history.clear()
+        
+    return {"status": "New session started", "session_id": new_id}
 
 @router.post("/api/chat")
 async def chat(request: Request, chat_req: ChatRequest):

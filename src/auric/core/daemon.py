@@ -14,6 +14,7 @@ import asyncio
 import logging
 from collections import deque
 from typing import Optional, Deque, Dict, Any
+from uuid import uuid4
 from pathlib import Path
 
 from textual.app import App
@@ -59,7 +60,11 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     api_app.state.command_bus = command_bus
     api_app.state.web_chat_history = web_chat_history
     api_app.state.web_log_buffer = web_log_buffer
+    api_app.state.web_log_buffer = web_log_buffer
     api_app.state.config = config
+    
+    # Initialize active session
+    api_app.state.current_session_id = str(uuid4())
     # We will inject audit_logger later after init
 
     # 1.1 Configure API App (Routes & Static)
@@ -187,9 +192,10 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      
                      # Chat History filters
                      if level in ("USER", "AGENT", "THOUGHT"):
-                         web_chat_history.append(msg)
-                         # Persist to DB
-                         await audit_logger.log_chat(role=level, content=str(text))
+                          web_chat_history.append(msg)
+                          # Persist to DB with current session ID
+                          current_sid = getattr(api_app.state, "current_session_id", None)
+                          await audit_logger.log_chat(role=level, content=str(text), session_id=current_sid)
                          
                 else:
                     # Raw string

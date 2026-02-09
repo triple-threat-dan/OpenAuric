@@ -72,11 +72,19 @@ main {
     /* Prevent body scroll */
 }
 
-/* Chat Panel takes 75% width */
+/* Chat Panel takes 60% width */
 #chat-panel {
     flex: 3;
     display: flex;
     flex-direction: column;
+}
+
+/* Session Panel (Left) takes 20% width */
+#session-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
 }
 
 /* Sidebar takes 25% width */
@@ -109,6 +117,41 @@ main {
     padding-bottom: 10px;
     color: var(--accent-color);
     font-size: 1.2rem;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+}
+
+.panel-header h2 {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+#new-session-btn {
+    background: transparent;
+    color: var(--accent-color);
+    border: 1px solid var(--accent-color);
+    padding: 0 8px;
+    height: 24px;
+    font-size: 1.2rem;
+    line-height: 1;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#new-session-btn:hover {
+    background: var(--accent-color);
+    color: #000;
 }
 
 .content {
@@ -299,4 +342,39 @@ button {
 
 button:hover {
     background: #fff;
+}
+
+/* Session List Items */
+.session-item {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s, border-left 0.2s;
+}
+
+.session-item:hover {
+    background: #252525;
+}
+
+.session-item.active {
+    background: #0d1f15;
+    /* Dark Greenish tint */
+    border-left: 3px solid var(--accent-color);
+    color: #fff;
+}
+
+.session-id {
+    font-weight: bold;
+    font-size: 0.85rem;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-meta {
+    font-size: 0.75rem;
+    color: #888;
+    display: flex;
+    justify-content: space-between;
 }

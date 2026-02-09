@@ -5,7 +5,7 @@ from typing import Optional, List, Any, Dict
 from uuid import uuid4
 
 from pydantic import Json
-from sqlalchemy import JSON, Column, text, delete
+from sqlalchemy import JSON, Column, text, delete, func, desc
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import Field, SQLModel, Session, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -144,13 +144,44 @@ class AuditLogger:
             session.add(message)
             await session.commit()
 
-    async def get_chat_history(self, limit: int = 50) -> List[ChatMessage]:
+    async def get_chat_history(self, limit: int = 50, session_id: Optional[str] = None) -> List[ChatMessage]:
         """Retrieves recent chat history."""
         async with AsyncSession(self.engine) as session:
-            statement = select(ChatMessage).order_by(ChatMessage.timestamp.desc()).limit(limit)
+            statement = select(ChatMessage)
+            
+            if session_id:
+               statement = statement.where(ChatMessage.session_id == session_id)
+            
+            statement = statement.order_by(ChatMessage.timestamp.desc()).limit(limit)
             result = await session.exec(statement)
             # Reverse to get chronological order for display
             return list(reversed(result.all()))
+
+    async def get_sessions(self) -> List[Dict[str, Any]]:
+        """Retrieves a list of chat sessions."""
+        async with AsyncSession(self.engine) as session:
+            # Aggregate to find distinct sessions and their last activity
+            # We want: session_id, last_timestamp, message_count, preview
+            # Note: SQLModel doesn't strictly type return of group_by, so we use session.exec
+            
+            # Simple query: Get all sessions ordered by last message time
+            statement = select(
+                ChatMessage.session_id,
+                func.max(ChatMessage.timestamp).label("last_active"),
+                func.count(ChatMessage.id).label("fn_count") # Alias to avoid keyword conflict if any
+            ).group_by(ChatMessage.session_id).order_by(desc("last_active"))
+            
+            result = await session.exec(statement)
+            sessions = []
+            for row in result.all():
+                sess_id, last_active, count = row
+                if sess_id: # Ignore None session_ids for now, or group them as "Legacy"
+                    sessions.append({
+                        "session_id": sess_id,
+                        "last_active": last_active.isoformat() if last_active else None,
+                        "message_count": count
+                    })
+            return sessions
 
     async def log_llm(self, interaction: LLMInteraction) -> None:
         """Logs an LLM interaction."""

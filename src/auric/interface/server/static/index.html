@@ -19,6 +19,22 @@
 
         <!-- Main Content -->
         <main>
+            <!-- Left Sidebar (Sessions) -->
+            <!-- Left Sidebar (Sessions) -->
+            <section class="panel" id="session-panel">
+                <div class="panel-header">
+                    <h2>📚 ARCHIVES</h2>
+                    <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
+                </div>
+                <div class="content scroll-box" id="session-list">
+                    <div class="session-item active" id="session-live" onclick="switchSession(null)">
+                        <div class="session-id">🔴 LIVE COMMUNION</div>
+                        <div class="session-meta">Assuming direct control...</div>
+                    </div>
+                    <!-- Sessions injected here -->
+                </div>
+            </section>
+
             <!-- Chat Panel (The Void) - Takes up most space -->
             <section class="panel" id="chat-panel">
                 <h2>🌌 THE VOID (Communion)</h2>
@@ -64,6 +80,8 @@
 
     <script>
         const API_URL = '/api';
+        let activeSessionId = null; // null = Live, string = UUID
+        let lastSessionListJSON = "";
 
         // Polling loop
         async function updateState() {
@@ -73,9 +91,18 @@
                 const data = await response.json();
 
                 renderFocus(data.focus_state);
-                renderChat(data.chat_history);
+                renderFocus(data.focus_state);
+
+                // Only render live chat if we are in "Live" mode
+                if (activeSessionId === null) {
+                    renderChat(data.chat_history);
+                }
+
                 renderLogs(data.logs);
                 renderStats(data.stats);
+
+                // Fetch sessions periodically
+                fetchSessions();
 
                 document.getElementById('status-badge').textContent = "ONLINE";
                 document.getElementById('status-badge').classList.add('online');
@@ -230,9 +257,84 @@
             if (e.key === 'Enter') splitMessage();
         });
 
+        // Session Management
+        async function fetchSessions() {
+            try {
+                const response = await fetch(`${API_URL}/sessions`);
+                if (!response.ok) return;
+                const sessions = await response.json();
+
+                const currentJSON = JSON.stringify(sessions);
+                if (currentJSON === lastSessionListJSON) return;
+                lastSessionListJSON = currentJSON;
+
+                const container = document.getElementById('session-list');
+                // Keep the "Live" item
+                const liveItem = `<div class="session-item ${activeSessionId === null ? 'active' : ''}" id="session-live" onclick="switchSession(null)">
+                        <div class="session-id">🔴 LIVE COMMUNION</div>
+                        <div class="session-meta">Monitoring...</div>
+                    </div>`;
+
+                const listHtml = sessions.map(sess => {
+                    const isActive = activeSessionId === sess.session_id;
+                    const date = sess.last_active ? new Date(sess.last_active).toLocaleString() : 'Unknown';
+                    return `
+                    <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${sess.session_id}')">
+                        <div class="session-id">${sess.session_id}</div>
+                        <div class="session-meta">
+                            <span>${date}</span>
+                            <span>${sess.message_count} msgs</span>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                container.innerHTML = liveItem + listHtml;
+            } catch (e) {
+                console.error("Failed to fetch sessions", e);
+            }
+        }
+
+        async function switchSession(sessionId) {
+            activeSessionId = sessionId;
+
+            // Immediately update UI to show active state
+            // Re-fetching sessions will re-render with correct active class
+            fetchSessions();
+
+            if (activeSessionId !== null) {
+                // Load history for that session
+                try {
+                    const response = await fetch(`${API_URL}/chat/${sessionId}`);
+                    if (response.ok) {
+                        const history = await response.json();
+                        renderChat(history); // Render immediately
+                    }
+                } catch (e) {
+                    console.error("Failed to load session history", e);
+                }
+            } else {
+                // Clear current view temporarily or wait for next poll?
+                // Next poll will pick it up in < 1s.
+                document.getElementById('chat-content').innerHTML = ''; // Visual clear
+            }
+        }
+
+        async function startNewSession() {
+            if (!confirm("Start a new session?")) return;
+
+            try {
+                await fetch(`${API_URL}/sessions/new`, { method: 'POST' });
+                // Switch to live view
+                switchSession(null);
+            } catch (e) {
+                alert("Failed to start new session");
+            }
+        }
+
         // Loop
         setInterval(updateState, 1000);
         updateState(); // Initial call
+        fetchSessions(); // Initial session load
     </script>
 </body>
 
