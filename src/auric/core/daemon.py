@@ -262,7 +262,9 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      logger.info(f"Thinking on: {user_msg}")
                      # Process with Engine
                      try:
-                         response = await rlm_engine.think(user_msg)
+                         # Extract session_id if available (from WEB)
+                         session_id = item.get("session_id") if isinstance(item, dict) else None
+                         response = await rlm_engine.think(user_msg, session_id=session_id)
                          
                          # Reply to Source
                          if source == "WEB":

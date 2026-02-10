@@ -57,6 +57,7 @@ class LLMGateway:
         self, 
         messages: List[Dict[str, str]], 
         tier: str = "smart", 
+        session_id: Optional[str] = None,
         **kwargs
     ) -> Any:
         """
@@ -136,7 +137,8 @@ class LLMGateway:
                         prompt_tokens=p_tokens,
                         completion_tokens=c_tokens,
                         total_cost=cost,
-                        duration_ms=duration
+                        duration_ms=duration,
+                        session_id=session_id
                     )
                     await self.audit_logger.log_llm(interaction)
                 except Exception as log_err:

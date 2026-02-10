@@ -93,7 +93,7 @@ class RLMEngine:
         self._action_history: List[str] = []
         self._max_history = 10 
 
-    async def think(self, user_query: str, depth: int = 0) -> str:
+    async def think(self, user_query: str, depth: int = 0, session_id: Optional[str] = None) -> str:
         """
         The main recursive loop.
         1. Checks safeguards (Depth, Cost).
@@ -122,10 +122,18 @@ class RLMEngine:
         system_prompt = self._assemble_system_prompt(task_context)
 
         # 4. Call LLM
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
-        ]
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Inject Chat History (only at depth 0)
+        if depth == 0 and session_id and self.gateway.audit_logger:
+            # Get recent 10 messages for context
+            history = await self.gateway.audit_logger.get_chat_history(limit=10, session_id=session_id)
+            for msg in history:
+                if msg.role in ["USER", "AGENT"]:
+                    role = "user" if msg.role == "USER" else "assistant"
+                    messages.append({"role": role, "content": msg.content})
+
+        messages.append({"role": "user", "content": user_query})
 
         # Per requirements, we need to handle `spawn_sub_agent`. 
         # Since we don't have a rigid Tool definition system in this file yet (it's injected via prompt or gateway),
@@ -137,6 +145,7 @@ class RLMEngine:
             response = await self.gateway.chat_completion(
                 messages=messages,
                 tier="smart",
+                session_id=session_id,
                 # We would verify tools here, e.g. tools=[spawn_sub_agent_schema]
             )
         except Exception as e:   

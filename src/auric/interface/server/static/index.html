@@ -28,7 +28,7 @@
                 </div>
                 <div class="content scroll-box" id="session-list">
                     <div class="session-item active" id="session-live" onclick="switchSession(null)">
-                        <div class="session-id">🔴 LIVE COMMUNION</div>
+                        <div class="session-id">🔴 LIVE CHAT</div>
                         <div class="session-meta">Assuming direct control...</div>
                     </div>
                     <!-- Sessions injected here -->
@@ -37,7 +37,7 @@
 
             <!-- Chat Panel (The Void) - Takes up most space -->
             <section class="panel" id="chat-panel">
-                <h2>🌌 THE VOID (Communion)</h2>
+                <h2>🌌 THE VOID (Chat)</h2>
                 <div class="content scroll-box" id="chat-content">
                     <!-- Chat history injected here -->
                 </div>
@@ -57,7 +57,9 @@
 
                 <!-- Bottom Right: The Stream (Logs) -->
                 <section class="panel" id="log-panel">
-                    <h2>📜 THE STREAM (Logs)</h2>
+                    <h2>📜 THE STREAM (Logs) <a href="llm_logs.html"
+                            style="font-size: 0.6em; float: right; color: var(--accent-color); text-decoration: none;">[VIEW
+                            FULL]</a></h2>
                     <div class="content scroll-box" id="log-content">
                         <!-- Logs will be injected here -->
                     </div>
@@ -271,16 +273,17 @@
                 const container = document.getElementById('session-list');
                 // Keep the "Live" item
                 const liveItem = `<div class="session-item ${activeSessionId === null ? 'active' : ''}" id="session-live" onclick="switchSession(null)">
-                        <div class="session-id">🔴 LIVE COMMUNION</div>
+                        <div class="session-id">🔴 LIVE CHAT</div>
                         <div class="session-meta">Monitoring...</div>
                     </div>`;
 
                 const listHtml = sessions.map(sess => {
                     const isActive = activeSessionId === sess.session_id;
                     const date = sess.last_active ? new Date(sess.last_active).toLocaleString() : 'Unknown';
+                    const displayName = sess.name || sess.session_id;
                     return `
                     <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${sess.session_id}')">
-                        <div class="session-id">${sess.session_id}</div>
+                        <div class="session-id">${displayName}</div>
                         <div class="session-meta">
                             <span>${date}</span>
                             <span>${sess.message_count} msgs</span>

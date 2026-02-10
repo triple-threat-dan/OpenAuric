@@ -38,10 +38,17 @@ class ChatMessage(SQLModel, table=True):
     session_id: Optional[str] = None
 
 
+class Session(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    name: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 class LLMInteraction(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     timestamp: datetime = Field(default_factory=datetime.now)
     model: str
+    session_id: Optional[str] = None
     input_messages: List[Any] = Field(sa_column=Column(JSON))
     output_content: str
     prompt_tokens: Optional[int] = None
@@ -66,9 +73,35 @@ class AuditLogger:
         self.engine = create_async_engine(connection_string, echo=False, connect_args={"timeout": 60})
 
     async def init_db(self):
-        """Creates tables if they don't exist."""
+        """Creates tables if they don't exist and handles migrations."""
         async with self.engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.create_all)
+            
+            # --- Migrations ---
+            # Check for missing 'session_id' in LLMInteraction
+            try:
+                # Get table info
+                columns_result = await conn.execute(text("PRAGMA table_info(llminteraction);"))
+                columns = [row.name for row in columns_result.fetchall()]
+                
+                if "session_id" not in columns:
+                    # Add column
+                    await conn.execute(text("ALTER TABLE llminteraction ADD COLUMN session_id VARCHAR;"))
+            except Exception as e:
+                # Ignore if table doesn't exist or other error (create_all should have handled table creation)
+                pass
+
+            # Check for missing 'session_id' in ChatMessage
+            try:
+                columns_result = await conn.execute(text("PRAGMA table_info(chatmessage);"))
+                columns = [row.name for row in columns_result.fetchall()]
+                
+                if "session_id" not in columns:
+                    await conn.execute(text("ALTER TABLE chatmessage ADD COLUMN session_id VARCHAR;"))
+            except Exception as e:
+                pass
+            # ------------------
+
             # Enable WAL mode for better concurrency
             # Retrying a few times in case of transient locks
             for i in range(5):
@@ -160,37 +193,95 @@ class AuditLogger:
     async def get_sessions(self) -> List[Dict[str, Any]]:
         """Retrieves a list of chat sessions."""
         async with AsyncSession(self.engine) as session:
-            # Aggregate to find distinct sessions and their last activity
-            # We want: session_id, last_timestamp, message_count, preview
-            # Note: SQLModel doesn't strictly type return of group_by, so we use session.exec
-            
-            # Simple query: Get all sessions ordered by last message time
+            # 1. Get all sessions with message counts and last active time
             statement = select(
                 ChatMessage.session_id,
                 func.max(ChatMessage.timestamp).label("last_active"),
-                func.count(ChatMessage.id).label("fn_count") # Alias to avoid keyword conflict if any
+                func.count(ChatMessage.id).label("fn_count")
             ).group_by(ChatMessage.session_id).order_by(desc("last_active"))
             
             result = await session.exec(statement)
-            sessions = []
+            sessions_data = []
+            
             for row in result.all():
                 sess_id, last_active, count = row
-                if sess_id: # Ignore None session_ids for now, or group them as "Legacy"
-                    sessions.append({
-                        "session_id": sess_id,
-                        "last_active": last_active.isoformat() if last_active else None,
-                        "message_count": count
-                    })
-            return sessions
+                if not sess_id: continue
+
+                # 2. Get Session Name (if exists)
+                # We could join, but let's just query for now or rely on separate query if needed.
+                # Actually, let's just get the name from Session table.
+                
+                name = "Unknown Session"
+                
+                # Fetch Session object
+                sess_obj = await session.get(Session, sess_id)
+                if sess_obj and sess_obj.name:
+                    name = sess_obj.name
+                else:
+                    # Generate name from first message
+                    msg_stmt = select(ChatMessage).where(ChatMessage.session_id == sess_id).order_by(ChatMessage.timestamp.asc()).limit(1)
+                    first_msg = (await session.exec(msg_stmt)).one_or_none()
+                    if first_msg:
+                        # Truncate to 30 chars
+                        name = first_msg.content[:30] + "..." if len(first_msg.content) > 30 else first_msg.content
+                    else:
+                        name = f"Session {sess_id[:8]}"
+
+                sessions_data.append({
+                    "session_id": sess_id,
+                    "name": name,
+                    "last_active": last_active.isoformat() if last_active else None,
+                    "message_count": count
+                })
+            
+            return sessions_data
 
     async def log_llm(self, interaction: LLMInteraction) -> None:
         """Logs an LLM interaction."""
         async with AsyncSession(self.engine) as session:
             session.add(interaction)
             await session.commit()
+
+    async def get_llm_logs(self, limit: int = 20, offset: int = 0) -> Dict[str, Any]:
+        """Retrieves paginated LLM interaction logs."""
+        async with AsyncSession(self.engine) as session:
+            # Get total count
+            count_statement = select(func.count(LLMInteraction.id))
+            count_result = await session.exec(count_statement)
+            total = count_result.one()
+
+            # Get items
+            statement = select(LLMInteraction).order_by(LLMInteraction.timestamp.desc()).offset(offset).limit(limit)
+            result = await session.exec(statement)
+            items = result.all()
+
+            return {
+                "total": total,
+                "items": items
+            }
             
     async def clear_chat_history(self) -> None:
         """Clears all chat history."""
         async with AsyncSession(self.engine) as session:
             await session.exec(delete(ChatMessage))
             await session.commit()
+
+    async def create_session(self, name: Optional[str] = None) -> str:
+        """Creates a new session and returns its ID."""
+        session_id = str(uuid4())
+        session = Session(id=session_id, name=name)
+        async with AsyncSession(self.engine) as db:
+            db.add(session)
+            await db.commit()
+        return session_id
+
+    async def rename_session(self, session_id: str, new_name: str) -> None:
+        """Renames a session."""
+        async with AsyncSession(self.engine) as db:
+            statement = select(Session).where(Session.id == session_id)
+            results = await db.exec(statement)
+            session = results.one_or_none()
+            if session:
+                session.name = new_name
+                db.add(session)
+                await db.commit()

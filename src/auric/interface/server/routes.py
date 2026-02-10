@@ -32,6 +32,13 @@ class SessionSummary(BaseModel):
     last_active: str = None
     message_count: int
 
+class LLMLogsResponse(BaseModel):
+    items: List[Dict[str, Any]]
+    total: int
+
+class RenameRequest(BaseModel):
+    name: str
+
 # --- Routes ---
 
 @router.get("/api/status", response_model=StatusResponse)
@@ -151,6 +158,14 @@ async def new_session(request: Request):
         
     return {"status": "New session started", "session_id": new_id}
 
+@router.post("/api/sessions/{session_id}/rename")
+async def rename_session(request: Request, session_id: str, body: RenameRequest):
+    """Renames a session."""
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    if audit_logger:
+        await audit_logger.rename_session(session_id, body.name)
+    return {"status": "ok"}
+
 @router.post("/api/chat")
 async def chat(request: Request, chat_req: ChatRequest):
     """
@@ -163,9 +178,27 @@ async def chat(request: Request, chat_req: ChatRequest):
     msg = {
         "level": "USER",
         "message": chat_req.message,
-        "source": "WEB"
+        "source": "WEB",
+        "session_id": getattr(request.app.state, "current_session_id", None)
     }
     await command_bus.put(msg)
     return {"status": "Message sent"}
+
+@router.get("/api/llm_logs", response_model=LLMLogsResponse)
+async def get_llm_logs(request: Request, limit: int = 20, offset: int = 0):
+    """Returns paginated LLM logs."""
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    if not audit_logger:
+        return {"items": [], "total": 0}
+    
+    try:
+        result = await audit_logger.get_llm_logs(limit, offset)
+        # items are SQLModel objects, convert to dicts for safety/compatibility
+        return {
+            "total": result["total"],
+            "items": [item.model_dump() for item in result["items"]]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # We'll mount the static files in the main daemon setup.
