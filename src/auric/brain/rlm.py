@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 
 from pydantic import BaseModel, Field
 
-from auric.core.config import AuricConfig
+from auric.core.config import AuricConfig, AURIC_WORKSPACE_DIR
 from auric.brain.llm_gateway import LLMGateway
 from auric.memory.librarian import GrimoireLibrarian
 from auric.memory.focus_manager import FocusManager
@@ -76,13 +76,15 @@ class RLMEngine:
         gateway: LLMGateway,
         librarian: GrimoireLibrarian,
         focus_manager: FocusManager,
-        pact_manager: Any = None # Typed as Any to avoid circular import for now
+        pact_manager: Any = None, # Typed as Any to avoid circular import for now
+        tool_registry: Any = None
     ):
         self.config = config
         self.gateway = gateway
         self.librarian = librarian
         self.focus_manager = focus_manager
         self.pact_manager = pact_manager
+        self.tool_registry = tool_registry
         
         self.session_cost = 0.0
         self.recursion_guard = RecursionGuard(config.agents.max_recursion)
@@ -181,6 +183,21 @@ class RLMEngine:
                         # RLM doesn't know the tool names unless we cache them.
                         # However, based on the prompt, we just want to delegate.
                         try:
+                            # Try Registry First (Internal Tools)
+                            if self.tool_registry:
+                                registry_result = await self.tool_registry.execute_tool(fn_name, args)
+                                if "Tool" not in registry_result and "Error: Tool" not in registry_result: 
+                                    # Very loose check, but execute_tool returns string. 
+                                    # If it says "Error: Tool ... not found", we continue to Pact.
+                                    # Actually, let's just try running it.
+                                    pass
+
+                            # Better logic: Check if it's an internal tool
+                            if self.tool_registry and fn_name in self.tool_registry._internal_tools: 
+                                result = await self.tool_registry.execute_tool(fn_name, args)
+                                return f"Tool {fn_name} executed: {result}"
+                            
+                            # Fallback to Pact
                             result = await self.pact_manager.execute_tool(fn_name, args)
                             return f"Tool {fn_name} executed successfully: {result}"
                         except ValueError:
@@ -195,36 +212,39 @@ class RLMEngine:
     def _assemble_system_prompt(self, task_context: TaskContext) -> str:
         """
         Builds the dynamic system prompt.
-        Order: SOUL -> USER (Depth 0) -> TIME -> FOCUS -> TOOLS -> MEMORY
+        Order: AGENT -> SOUL -> USER (Depth 0) -> TIME -> TOOLS -> MEMORY -> FOCUS
         """
         parts = []
 
-        # 1. The Soul
-        soul_path = Path.home() / ".auric" / "grimoire" / "SOUL.md"
+        # 0. The Agent (Core Requirements)
+        agent_path = AURIC_WORKSPACE_DIR / "AGENT.md"
+        if agent_path.exists():
+             parts.append(agent_path.read_text(encoding="utf-8"))
+        else:
+             parts.append("You are OpenAuric, a recursive AI agent.")
+
+        # 1. The Soul (Personality)
+        soul_path = AURIC_WORKSPACE_DIR / "SOUL.md"
         if soul_path.exists():
             parts.append(soul_path.read_text(encoding="utf-8"))
-        else:
-            parts.append("You are OpenAuric, a recursive AI agent.")
 
         # 2. The User (Only at Depth 0)
         if task_context.depth == 0:
-            user_path = Path.home() / ".auric" / "grimoire" / "USER.md"
+            user_path = AURIC_WORKSPACE_DIR / "USER.md"
             if user_path.exists():
                 parts.append(f"## User Context\n{user_path.read_text(encoding='utf-8')}")
 
         # 3. The Time
         parts.append(f"## Current Time\n{datetime.now().isoformat()}")
 
-        # 4. The Focus (Working Memory)
-        # We assume FocusManager has the current state loaded or we load it.
-        # Since FocusManager is stateful, we can ask it for the current text representation
-        # but the class provided has `load` which reads from file.
-        # Let's read the file directly or use the manager if it had a 'get_content' method.
-        # The manager has `load()` which returns a model. simpler to read the file for the raw prompt injection
-        # to ensure we get the exact markdown structure.
-        focus_path = Path.home() / ".auric" / "FOCUS.md"
-        if focus_path.exists():
-            parts.append(focus_path.read_text(encoding="utf-8"))
+        # 4 Memory & Abilities
+        memory_path = AURIC_WORKSPACE_DIR / "grimoire" / "MEMORY.md"
+        if memory_path.exists():
+            parts.append(memory_path.read_text(encoding="utf-8"))
+
+        abilities_path = AURIC_WORKSPACE_DIR / "grimoire" / "ABILITIES.md"
+        if abilities_path.exists():
+            parts.append(abilities_path.read_text(encoding="utf-8"))
 
         # 5. The Tools
         # In a real system, we'd iterate over available tools and dump their schemas.
@@ -241,6 +261,12 @@ You have access to the following tools. Use them to solve the user's request.
             pact_tools = self.pact_manager.get_all_tools_definitions()
             if pact_tools:
                 parts.append(pact_tools)
+
+        # Inject Registry Tools
+        if self.tool_registry:
+            registry_schemas = self.tool_registry.get_tools_schema()
+            if registry_schemas:
+                parts.append(f"## Registry Tools:\n{json.dumps(registry_schemas, indent=2)}")
         
 
         # 6. The Memory (Snapshot)
@@ -248,6 +274,11 @@ You have access to the following tools. Use them to solve the user's request.
             parts.append("## Relevant Context (Grimoire)")
             for snippet in task_context.relevant_snippets:
                 parts.append(snippet)
+
+        # 7. The Focus (Working Memory)
+        focus_path = AURIC_WORKSPACE_DIR / "grimoire" / "FOCUS.md"
+        if focus_path.exists():
+            parts.append(focus_path.read_text(encoding="utf-8"))
         
         return "\n\n".join(parts)
 

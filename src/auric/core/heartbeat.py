@@ -7,11 +7,12 @@ of the "Dream Cycle" (maintenance/summarization) and "Vigil" (scheduled checks).
 
 import os
 import logging
-from datetime import datetime, timedelta
+from apscheduler.triggers.interval import IntervalTrigger
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from auric.core.config import load_config
+from auric.core.config import AURIC_WORKSPACE_DIR, load_config, timedelta
 from auric.memory import chronicles
 
 logger = logging.getLogger("auric.core.heartbeat")
@@ -81,7 +82,7 @@ def can_dream() -> bool:
     # Condition 2: Data Availability
     # Check ~/.auric/logs/current_session.log (assuming standard path)
     # We can refine this path later if config changes.
-    log_path = Path.home() / ".auric" / "logs" / "current_session.log"
+    log_path = AURIC_WORKSPACE_DIR / "logs" / "current_session.log"
     
     if not log_path.exists():
         logger.debug("Skipping Dream Cycle: No session log found.")

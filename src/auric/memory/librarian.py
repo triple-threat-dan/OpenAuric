@@ -6,6 +6,8 @@ from typing import Dict, Optional, List
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent, FileMovedEvent
 
+from auric.core.config import AURIC_WORKSPACE_DIR
+
 logger = logging.getLogger("auric.librarian")
 
 class GrimoireHandler(FileSystemEventHandler):
@@ -127,7 +129,7 @@ class GrimoireLibrarian:
                            Defaults to ~/.auric/grimoire
         """
         if grimoire_path is None:
-            self.grimoire_path = Path.home() / ".auric" / "grimoire"
+            self.grimoire_path = AURIC_WORKSPACE_DIR / "grimoire"
         else:
             self.grimoire_path = grimoire_path
 

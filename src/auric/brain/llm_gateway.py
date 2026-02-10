@@ -34,6 +34,9 @@ class LLMGateway:
         # but per-model checks are more robust if mixing local/remote.
         self.is_global_local = config.agents.is_local
 
+        # Suppress noisy LiteLLM logs
+        litellm.suppress_debug_info = True
+
     def is_local_model(self, model_name: str) -> bool:
         """
         Determines if a model needs to be serialized due to local resource constraints.

@@ -16,6 +16,14 @@ import json5
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
+# Constants
+AURIC_CONFIG_FILE = "auric.json"
+AURIC_WORKSPACE_DIR = Path.home() / ".auric" / "workspace"
+# Assume templates are relative to source root if running from source,
+# or packaged. For this repo structure:
+# src/auric/core/config.py -> ../../../templates
+AURIC_TEMPLATES_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+
 logger = logging.getLogger("auric.config")
 
 # ==============================================================================

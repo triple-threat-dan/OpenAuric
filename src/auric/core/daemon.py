@@ -12,6 +12,7 @@ sharing memory and state (like the internal event bus).
 
 import asyncio
 import logging
+import os
 from collections import deque
 from typing import Optional, Deque, Dict, Any
 from uuid import uuid4
@@ -43,7 +44,11 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     """
     # 0. Load Configuration
     config = load_config()
-    logger.info("AuricDaemon starting up...")
+    logger.info(f"Starting Auric Daemon (PID {os.getpid()})...")
+    
+    # 0. Bootstrap Workspace
+    from auric.core.bootstrap import ensure_workspace
+    ensure_workspace()
 
     # 1. Setup Internal Buses
     # `command_bus`: Inputs from Users (TUI, API, Pacts) -> Brain
@@ -142,6 +147,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     from auric.memory.librarian import GrimoireLibrarian
     from auric.memory.focus_manager import FocusManager
     from auric.brain.rlm import RLMEngine
+    from auric.skills.tool_registry import ToolRegistry
 
     gateway = LLMGateway(config, audit_logger=audit_logger)
     
@@ -151,12 +157,15 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     focus_path = Path("~/.auric/grimoire/FOCUS.md").expanduser()
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
+    tool_registry = ToolRegistry(config)
+
     rlm_engine = RLMEngine(
         config=config,
         gateway=gateway,
         librarian=librarian,
         focus_manager=focus_manager,
-        pact_manager=pact_manager
+        pact_manager=pact_manager,
+        tool_registry=tool_registry
     )
 
     # 7. Start Brain Loop & Dispatcher

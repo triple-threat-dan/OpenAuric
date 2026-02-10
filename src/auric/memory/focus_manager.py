@@ -1,6 +1,8 @@
 import re
 import threading
 from enum import Enum
+from datetime import datetime
+from auric.core.config import AURIC_WORKSPACE_DIR
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -26,6 +28,7 @@ class FocusModel(BaseModel):
         description="List of steps, e.g., [{'step': 'Do X', 'completed': False}]"
     )
     working_memory: str = Field(default="", description="Scratchpad notes.")
+    focus_path: Path = Field(default_factory=lambda: AURIC_WORKSPACE_DIR / "grimoire" / "FOCUS.md", description="Path to the focus file.")
     state: FocusState = Field(default=FocusState.NEW, description="Derived state of the focus.")
 
     def get_active_step(self) -> Optional[str]:
