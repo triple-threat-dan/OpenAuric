@@ -44,6 +44,7 @@ class AgentDefaults(BaseModel):
 class AgentsConfig(BaseModel):
     """Configuration for agents."""
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
+    name: str = "Auric"
     smart_model: str = "gemini/gemini-1.5-pro"
     fast_model: str = "gemini/gemini-1.5-flash"
     is_local: bool = False

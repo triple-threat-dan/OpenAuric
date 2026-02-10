@@ -76,9 +76,43 @@ class AuricDiscordClient(discord.Client):
              if not isinstance(message.channel, discord.DMChannel):
                  logger.debug(f"Ignored message from unauthorized channel {message.channel.id}")
                  return
-             else:
                  # It is a DM, and user passed user-whitelist check.
                  pass
+
+        # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
+        should_respond = False
+        
+        # 1. DMs are always intentional
+        if isinstance(message.channel, discord.DMChannel):
+            should_respond = True
+        
+        # 2. Direct Mention
+        elif self.user in message.mentions:
+            should_respond = True
+            
+        # 3. Name Mention
+        elif self.pact.agent_name.lower() in message.content.lower():
+            should_respond = True
+            
+        # 4. Reply to Bot
+        elif message.reference:
+            # Check if it's a reply to us
+            if message.reference.cached_message:
+                if message.reference.cached_message.author == self.user:
+                    should_respond = True
+            else:
+                # Need to fetch
+                try:
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                    if ref_msg and ref_msg.author == self.user:
+                        should_respond = True
+                except:
+                    # Message might be deleted or inaccessible
+                    pass
+
+        if not should_respond:
+            # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
+            return
 
         # Normalize to PactEvent
         event = PactEvent(
@@ -103,11 +137,12 @@ class AuricDiscordClient(discord.Client):
 
 
 class DiscordPact(BasePact):
-    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = []):
+    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric"):
         super().__init__()
         self.token = token
         self.allowed_channels = allowed_channels
         self.allowed_users = allowed_users
+        self.agent_name = agent_name
         self.client: Optional[AuricDiscordClient] = None
         self._task: Optional[asyncio.Task] = None
 
