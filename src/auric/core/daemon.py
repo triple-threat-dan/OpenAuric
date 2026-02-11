@@ -204,7 +204,9 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      if level in ("USER", "AGENT", "THOUGHT"):
                           web_chat_history.append(msg)
                           # Persist to DB with current session ID
-                          current_sid = getattr(api_app.state, "current_session_id", None)
+                          # Prefer session_id from message, fallback to global state
+                          msg_sid = msg.get("session_id")
+                          current_sid = msg_sid if msg_sid else getattr(api_app.state, "current_session_id", None)
                           await audit_logger.log_chat(role=level, content=str(text), session_id=current_sid)
                          
                 else:
@@ -229,6 +231,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                 source = None
                 sender_id = None
                 platform = None
+                session_id = item.get("session_id") if isinstance(item, dict) else None
                 
                 if isinstance(item, dict):
                     if item.get("level") == "USER":
@@ -246,10 +249,18 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                 
                 if user_msg:
                      # 0. Echo User Message to Internal Bus (for History/Console)
+                     # Inject Session ID from Global State if available
+                     current_sid = getattr(api_app.state, "current_session_id", None)
+                     
+                     # If source is PACT, we want to unify the session
+                     if source == "PACT" and not session_id:
+                         session_id = current_sid
+
                      await internal_bus.put({
                          "level": "USER",
                          "message": user_msg,
-                         "source": source
+                         "source": source,
+                         "session_id": session_id # Pass it along for logging
                      })
 
                      # Feedback to UI
@@ -260,10 +271,16 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      })
                      
                      logger.info(f"Thinking on: {user_msg}")
+                     logger.info(f"Thinking on: {user_msg}")
                      # Process with Engine
                      try:
-                         # Extract session_id if available (from WEB)
-                         session_id = item.get("session_id") if isinstance(item, dict) else None
+                         # Extract session_id if available (from WEB) or use the one we injected
+                         # session_id = item.get("session_id") if isinstance(item, dict) else None # Already handled above
+                         
+                         # Trigger Typing Indicator if PACT
+                         if source == "PACT" and platform and sender_id:
+                             asyncio.create_task(pact_manager.trigger_typing(platform, sender_id))
+
                          response = await rlm_engine.think(user_msg, session_id=session_id)
                          
                          # Reply to Source
@@ -277,6 +294,13 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                              adapter = pact_manager.adapters.get(platform)
                              if adapter:
                                  await adapter.send_message(sender_id, response)
+                                 # Also log to internal bus for history
+                                 await internal_bus.put({
+                                     "level": "AGENT",
+                                     "message": response,
+                                     "source": "BRAIN",
+                                     "session_id": session_id
+                                 })
                                  
                      except Exception as e:
                          logger.error(f"Brain Error: {e}")

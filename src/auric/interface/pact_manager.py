@@ -143,6 +143,14 @@ class PactManager:
         
         raise ValueError(f"Tool {tool_name} not found in any active pact.")
 
+    async def trigger_typing(self, platform: str, target_id: str) -> None:
+        """
+        Triggers typing indicator on the specified platform.
+        """
+        adapter = self.adapters.get(platform)
+        if adapter:
+            await adapter.trigger_typing(target_id)
+
     # ==========================
     # Tool Abstraction Methods
     # ==========================

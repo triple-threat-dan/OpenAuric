@@ -279,6 +279,40 @@ class DiscordPact(BasePact):
         except Exception as e:
             logger.error(f"Failed to add reaction: {e}")
 
+    async def trigger_typing(self, target_id: str) -> None:
+        """
+        Trigger a typing indicator on the target channel/user.
+        """
+        if not self.client or not self.client.is_ready():
+            return
+
+        try:
+            # target_id could be channel or user ID
+            t_id = int(target_id)
+            
+            # Try as channel first
+            target = self.client.get_channel(t_id)
+            if not target:
+                try:
+                    target = await self.client.fetch_channel(t_id)
+                except:
+                    pass
+            
+            # If not channel, try user (for DM)
+            if not target:
+                try:
+                    target = await self.client.fetch_user(t_id)
+                except:
+                    pass
+            
+            if target and hasattr(target, 'trigger_typing'):
+                await target.trigger_typing()
+            else:
+                logger.debug(f"Target {target_id} not found or doesn't support typing.")
+                
+        except Exception as e:
+            logger.error(f"Failed to trigger typing on {target_id}: {e}")
+
     # ==========================
     # Pact Abstraction Methods
     # ==========================
