@@ -57,6 +57,13 @@ class LLMInteraction(SQLModel, table=True):
     duration_ms: float
 
 
+class Heartbeat(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now)
+    status: str = "ALIVE"
+    metadata_json: Optional[str] = None # JSON string for extra info like load, memory, etc.
+
+
 class AuditLogger:
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
@@ -240,6 +247,18 @@ class AuditLogger:
         """Logs an LLM interaction."""
         async with AsyncSession(self.engine) as session:
             session.add(interaction)
+            await session.commit()
+
+    async def log_heartbeat(self, status: str = "ALIVE", meta: Optional[Dict[str, Any]] = None) -> None:
+        """Logs a system heartbeat."""
+        metadata_json = None
+        if meta:
+            import json
+            metadata_json = json.dumps(meta)
+            
+        hb = Heartbeat(status=status, metadata_json=metadata_json)
+        async with AsyncSession(self.engine) as session:
+            session.add(hb)
             await session.commit()
 
     async def get_llm_logs(self, limit: int = 20, offset: int = 0) -> Dict[str, Any]:

@@ -178,6 +178,25 @@ def stop(force: bool = typer.Option(False, "--force", "-f", help="Force kill the
             PID_FILE.unlink()
 
 @app.command()
+def heartbeat():
+    """Triggers a manual system heartbeat."""
+    import asyncio
+    from auric.core.database import AuditLogger
+    
+    async def run_manual_beat():
+        logger = AuditLogger()
+        # No init_db needed if just logging, but safer to init
+        # actually logging might fail if table missing.
+        console.print("[yellow]Initializing Database...[/yellow]")
+        await logger.init_db()
+        
+        console.print("[green]Logging Heartbeat...[/green]")
+        await logger.log_heartbeat(status="MANUAL", meta={"source": "cli"})
+        console.print("[bold green]Success! Heartbeat logged.[/bold green]")
+
+    asyncio.run(run_manual_beat())
+
+@app.command()
 def restart():
     """Restart the Auric Daemon."""
     stop()

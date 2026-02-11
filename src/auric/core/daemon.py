@@ -99,7 +99,12 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     audit_logger = AuditLogger()
     await audit_logger.init_db()
     api_app.state.audit_logger = audit_logger
-    
+
+    # 2.1 Initialize HeartbeatManager with Logger
+    from auric.core.heartbeat import HeartbeatManager
+    # Singleton Init
+    HeartbeatManager(audit_logger)
+
     # 3.1 Setup Pact Manager (Omni-Channel)
     from auric.interface.pact_manager import PactManager
     pact_manager = PactManager(config, audit_logger, command_bus, internal_bus)
@@ -135,13 +140,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     api_task = asyncio.create_task(safe_serve())
     logger.info(f"API Server starting on {config.gateway.host}:{config.gateway.port}")
 
-    # 5. Run the TUI (DISABLED)
-    # If tui_app is None, we instantiate our default AuricTUI
-    # if tui_app is None:
-    #     focus_path = Path("~/.auric/grimoire/FOCUS.md").expanduser()
-    #     tui_app = AuricTUI(command_bus=command_bus, event_bus=tui_bus, focus_file=focus_path)
-
-    # 6. Initialize Brain (RLM Engine) & Dependencies
+    # 5. Initialize Brain (RLM Engine) & Dependencies
     # Dependencies
     from auric.brain.llm_gateway import LLMGateway
     from auric.memory.librarian import GrimoireLibrarian
@@ -168,7 +167,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
         tool_registry=tool_registry
     )
 
-    # 7. Start Brain Loop & Dispatcher
+    # 6. Start Brain Loop & Dispatcher
     async def dispatcher_loop():
         logger.info("Message Dispatcher started.")
         while True:
@@ -292,7 +291,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                              })
                          elif source == "PACT":
                              adapter = pact_manager.adapters.get(platform)
-                             if adapter:
+                             if adapter and response:
                                  await adapter.send_message(sender_id, response)
                                  # Also log to internal bus for history
                                  await internal_bus.put({

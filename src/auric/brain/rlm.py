@@ -223,6 +223,8 @@ class RLMEngine:
                         logger.error(f"Failed to execute {fn_name}: {e}")
                         return f"Error executing {fn_name}: {e}"
         
+        return content
+
     def _parse_json_tool_calls(self, content: str) -> List[Any]:
         """
         Fallback parser for markdown-wrapped JSON tool calls.
