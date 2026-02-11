@@ -3,6 +3,9 @@ import asyncio
 import logging
 import hashlib
 import json
+import json
+import re
+from types import SimpleNamespace
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -164,6 +167,10 @@ class RLMEngine:
         content = response.choices[0].message.content or ""
         tool_calls = getattr(response.choices[0].message, "tool_calls", None)
 
+        if not tool_calls and content:
+            # Fallback: Parse Markdown JSON code blocks
+            tool_calls = self._parse_json_tool_calls(content)
+
         if tool_calls:
             for tool_call in tool_calls:
                 fn_name = tool_call.function.name
@@ -216,7 +223,37 @@ class RLMEngine:
                         logger.error(f"Failed to execute {fn_name}: {e}")
                         return f"Error executing {fn_name}: {e}"
         
-        return content
+    def _parse_json_tool_calls(self, content: str) -> List[Any]:
+        """
+        Fallback parser for markdown-wrapped JSON tool calls.
+        """
+        # Look for ```json { ... } ``` blocks
+        pattern = r"```json\s*(\{.*?\})\s*```"
+        matches = re.findall(pattern, content, re.DOTALL)
+        
+        parsed_tools = []
+        for json_str in matches:
+            try:
+                # Clean up newlines or comments if necessary, usually json.loads is strict
+                # Some models might add comments inside JSON, but specific regex for strict JSON is hard.
+                # We assume valid JSON block.
+                data = json.loads(json_str)
+                
+                if "name" in data and "arguments" in data:
+                    # RLM expects tool_call.function.name and .arguments (as string)
+                    args_str = json.dumps(data["arguments"]) if isinstance(data["arguments"], dict) else str(data["arguments"])
+                    
+                    tool_call = SimpleNamespace(
+                        function=SimpleNamespace(
+                            name=data["name"],
+                            arguments=args_str
+                        )
+                    )
+                    parsed_tools.append(tool_call)
+            except Exception as e:
+                logger.warning(f"Failed to parse fallback tool JSON: {e}")
+                
+        return parsed_tools
 
     def _assemble_system_prompt(self, task_context: TaskContext) -> str:
         """
@@ -261,6 +298,22 @@ class RLMEngine:
         parts.append("""
 ## Available Tools
 You have access to the following tools. Use them to solve the user's request.
+
+### Tool Usage Instructions
+1. To call a tool, output ONLY the JSON code block representing the tool call.
+2. Do not provide commentary before or after the JSON.
+3. If you output a tool call, your turn ends immediately. Do not generate further text.
+4. Format:
+```json
+{
+  "name": "tool_name",
+  "arguments": {
+    "arg_name": "value"
+  }
+}
+```
+
+### Native Tools
 - spawn_sub_agent(instruction: str): clear_instruction -> str
   Use this to delegate complex sub-tasks to a recursive instance of yourself. 
   Do not use if the task is simple.
