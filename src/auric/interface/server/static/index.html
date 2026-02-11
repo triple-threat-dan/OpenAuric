@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Arcane Library | OpenAuric</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>OPEN<span class="highlight">AURIC</span> // THE ARCANE LIBRARY</h1>
+            <div id="status-badge" class="badge">CONNECTING...</div>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Left Sidebar (Sessions) -->
+            <!-- Left Sidebar (Sessions) -->
+            <section class="panel" id="session-panel">
+                <div class="panel-header">
+                    <h2>📚 ARCHIVES</h2>
+                    <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
+                </div>
+                <div class="content scroll-box" id="session-list">
+                    <div class="session-item active" id="session-live" onclick="switchSession(null)">
+                        <div class="session-id">🔴 LIVE CHAT</div>
+                        <div class="session-meta">Assuming direct control...</div>
+                    </div>
+                    <!-- Sessions injected here -->
+                </div>
+            </section>
+
+            <!-- Chat Panel (The Void) - Takes up most space -->
+            <section class="panel" id="chat-panel">
+                <h2>🌌 THE VOID (Chat)</h2>
+                <div class="content scroll-box" id="chat-content">
+                    <!-- Chat history injected here -->
+                </div>
+            </section>
+
+            <!-- Sidebar (Grimoire + Logs) -->
+            <div class="sidebar">
+                <!-- Top Right: The Grimoire (Focus) -->
+                <section class="panel" id="focus-panel">
+                    <h2>🔮 THE GRIMOIRE (Focus)</h2>
+                    <div class="content" id="focus-content">
+                        <div id="prime-directive"></div>
+                        <ul id="plan-list"></ul>
+                        <div id="working-memory"></div>
+                    </div>
+                </section>
+
+                <!-- Bottom Right: The Stream (Logs) -->
+                <section class="panel" id="log-panel">
+                    <h2>📜 THE STREAM (Logs) <a href="llm_logs.html"
+                            style="font-size: 0.6em; float: right; color: var(--accent-color); text-decoration: none;">[VIEW
+                            FULL]</a></h2>
+                    <div class="content scroll-box" id="log-content">
+                        <!-- Logs will be injected here -->
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Footer: Chat & Stats -->
+        <footer>
+            <div id="stats-bar">
+                <span id="stat-model">Model: Unknown</span> |
+                <span id="stat-mem">Mem: --</span>
+            </div>
+            <div class="input-area">
+                <input type="text" id="chat-input" placeholder="Commune with the machine...">
+                <button id="send-btn">SEND</button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const API_URL = '/api';
+        let activeSessionId = null; // null = Live, string = UUID
+        let lastSessionListJSON = "";
+
+        // Polling loop
+        async function updateState() {
+            try {
+                const response = await fetch(`${API_URL}/status`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+
+                renderFocus(data.focus_state);
+                renderFocus(data.focus_state);
+
+                // Only render live chat if we are in "Live" mode
+                if (activeSessionId === null) {
+                    renderChat(data.chat_history);
+                }
+
+                renderLogs(data.logs);
+                renderStats(data.stats);
+
+                // Fetch sessions periodically
+                fetchSessions();
+
+                document.getElementById('status-badge').textContent = "ONLINE";
+                document.getElementById('status-badge').classList.add('online');
+            } catch (error) {
+                document.getElementById('status-badge').textContent = "OFFLINE";
+                document.getElementById('status-badge').classList.remove('online');
+                console.error('Fetch error:', error);
+            }
+        }
+
+        function renderFocus(focus) {
+            const container = document.getElementById('focus-content');
+            if (focus.error) {
+                container.innerHTML = `<div class="error">${focus.error}</div>`;
+                return;
+            }
+
+            // Prime Directive
+            document.getElementById('prime-directive').innerHTML = `
+                <h3>🎯 Prime Directive</h3>
+                <p>${focus.prime_directive || "Assuming direct control..."}</p>
+            `;
+
+            // Plan
+            const planList = document.getElementById('plan-list');
+            planList.innerHTML = '<h3>📋 Plan of Action</h3>';
+            if (focus.plan_steps) {
+                focus.plan_steps.forEach(step => {
+                    const li = document.createElement('li');
+                    li.className = step.completed ? 'completed' : '';
+                    li.innerHTML = `[${step.completed ? 'X' : ' '}] ${step.step}`;
+                    planList.appendChild(li);
+                });
+            }
+
+            // Memory
+            document.getElementById('working-memory').innerHTML = `
+                <h3>🧠 Working Memory</h3>
+                <pre>${focus.working_memory || ""}</pre>
+            `;
+        }
+
+        let lastChatHistoryJSON = "";
+
+        function renderChat(history) {
+            const container = document.getElementById('chat-content');
+            if (!history) return;
+
+            // 1. Check if user is near bottom BEFORE updating
+            const threshold = 50; // pixels
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+            const isFirstLoad = container.innerHTML.trim() === "";
+
+            const html = history.map(msg => {
+                const level = msg.level || "UNKNOWN";
+                const text = msg.message || "";
+
+                let className = "chat-entry";
+                let icon = "";
+
+                if (level === "USER") {
+                    className += " user";
+                    icon = "👤";
+                } else if (level === "AGENT") {
+                    className += " agent";
+                    icon = "🧙‍♂️";
+                } else if (level === "THOUGHT") {
+                    className += " thought";
+                    icon = "💭";
+                } else if (level === "UNKNOWN") {
+                    // Try to infer from text or just default
+                    if (text.startsWith("Thinking")) {
+                        className += " thought";
+                        icon = "💭";
+                    }
+                }
+
+                // Parse Markdown for message content
+                // Ensure marked is available
+                const content = (typeof marked !== 'undefined') ? marked.parse(text) : text;
+
+                return `<div class="${className}"><span class="icon">${icon}</span> <div class="text markdown-content">${content}</div></div>`;
+            }).join('');
+
+            // Update if JSON changed
+            const currentJSON = JSON.stringify(history);
+            if (currentJSON !== lastChatHistoryJSON) {
+                lastChatHistoryJSON = currentJSON;
+                container.innerHTML = html;
+
+                // 2. Only auto-scroll if user was already at bottom OR it's the first load
+                if (isNearBottom || isFirstLoad) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        }
+
+        let lastLogJSON = "";
+
+        function renderLogs(logs) {
+            const container = document.getElementById('log-content');
+
+            // Smart Scroll for Logs too
+            const threshold = 50;
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+            const isFirstLoad = container.innerHTML.trim() === "";
+
+            const html = logs.map(log => {
+                if (typeof log === 'string' && log.includes('[ERROR]')) {
+                    return `<div class="log-entry error">${log}</div>`;
+                }
+                return `<div class="log-entry">${log}</div>`;
+            }).join('');
+
+            // Update if JSON changed
+            const currentJSON = JSON.stringify(logs);
+            if (currentJSON !== lastLogJSON) {
+                lastLogJSON = currentJSON;
+
+                container.innerHTML = html;
+                if (isNearBottom || isFirstLoad) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        }
+
+        function renderStats(stats) {
+            document.getElementById('stat-model').textContent = `Model: ${stats.active_model}`;
+            document.getElementById('stat-mem').textContent = `Status: ${stats.status}`;
+        }
+
+        // Chat
+        async function splitMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            try {
+                await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                input.value = '';
+            } catch (e) {
+                alert("Failed to send message");
+            }
+        }
+
+        document.getElementById('send-btn').addEventListener('click', splitMessage);
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') splitMessage();
+        });
+
+        // Session Management
+        async function fetchSessions() {
+            try {
+                const response = await fetch(`${API_URL}/sessions`);
+                if (!response.ok) return;
+                const sessions = await response.json();
+
+                const currentJSON = JSON.stringify(sessions);
+                if (currentJSON === lastSessionListJSON) return;
+                lastSessionListJSON = currentJSON;
+
+                const container = document.getElementById('session-list');
+                // Keep the "Live" item
+                const liveItem = `<div class="session-item ${activeSessionId === null ? 'active' : ''}" id="session-live" onclick="switchSession(null)">
+                        <div class="session-id">🔴 LIVE CHAT</div>
+                        <div class="session-meta">Monitoring...</div>
+                    </div>`;
+
+                const listHtml = sessions.map(sess => {
+                    const isActive = activeSessionId === sess.session_id;
+                    const date = sess.last_active ? new Date(sess.last_active).toLocaleString() : 'Unknown';
+                    const displayName = sess.name || sess.session_id;
+                    return `
+                    <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${sess.session_id}')">
+                        <div class="session-id">${displayName}</div>
+                        <div class="session-meta">
+                            <span>${date}</span>
+                            <span>${sess.message_count} msgs</span>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                container.innerHTML = liveItem + listHtml;
+            } catch (e) {
+                console.error("Failed to fetch sessions", e);
+            }
+        }
+
+        async function switchSession(sessionId) {
+            activeSessionId = sessionId;
+
+            // Immediately update UI to show active state
+            // Re-fetching sessions will re-render with correct active class
+            fetchSessions();
+
+            if (activeSessionId !== null) {
+                // Load history for that session
+                try {
+                    const response = await fetch(`${API_URL}/chat/${sessionId}`);
+                    if (response.ok) {
+                        const history = await response.json();
+                        renderChat(history); // Render immediately
+                    }
+                } catch (e) {
+                    console.error("Failed to load session history", e);
+                }
+            } else {
+                // Clear current view temporarily or wait for next poll?
+                // Next poll will pick it up in < 1s.
+                document.getElementById('chat-content').innerHTML = ''; // Visual clear
+            }
+        }
+
+        async function startNewSession() {
+            if (!confirm("Start a new session?")) return;
+
+            try {
+                await fetch(`${API_URL}/sessions/new`, { method: 'POST' });
+                // Switch to live view
+                switchSession(null);
+            } catch (e) {
+                alert("Failed to start new session");
+            }
+        }
+
+        // Loop
+        setInterval(updateState, 1000);
+        updateState(); // Initial call
+        fetchSessions(); // Initial session load
+    </script>
+</body>
+
+</html>
