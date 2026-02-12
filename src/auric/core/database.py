@@ -304,3 +304,11 @@ class AuditLogger:
                 session.name = new_name
                 db.add(session)
                 await db.commit()
+
+    async def get_last_active_session_id(self) -> Optional[str]:
+        """Retrieves the ID of the most recently active session."""
+        async with AsyncSession(self.engine) as session:
+            # Check ChatMessages for most recent timestamp
+            statement = select(ChatMessage.session_id).order_by(ChatMessage.timestamp.desc()).limit(1)
+            result = await session.exec(statement)
+            return result.one_or_none()

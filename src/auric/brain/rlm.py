@@ -381,14 +381,26 @@ class RLMEngine:
     def _track_cost(self, response: Any):
         """
         Accumulate token costs.
-        This is a rough estimation or extraction from the response usage fields.
+        Uses litellm's calculated cost if available, otherwise estimates.
         """
-        usage = getattr(response, "usage", None)
-        if usage:
-            # Mock pricing: $10.00 per 1M tokens (blended)
-            total_tokens = getattr(usage, "total_tokens", 0)
-            cost = (total_tokens / 1_000_000) * 10.00
-            self.session_cost += cost
+        cost = 0.0
+        
+        # 1. Try to get exact cost from litellm hidden params
+        if hasattr(response, "_hidden_params"):
+            cost = response._hidden_params.get("response_cost", 0.0)
+        
+        # 2. Fallback to usage calculation if cost is 0 (local models or unsupported provider)
+        if cost == 0.0:
+            usage = getattr(response, "usage", None)
+            if usage:
+                 # Check if it's likely a local model or just missing cost data
+                 # We'll use a very low cost for fallback to avoid blocking users
+                 # $2.00 per 1M tokens (Approximate average of cheap models)
+                 total_tokens = getattr(usage, "total_tokens", 0)
+                 cost = (total_tokens / 1_000_000) * 2.00
+
+        self.session_cost += cost
+        logger.debug(f"Turn Cost: ${cost:.6f} | Total Session Cost: ${self.session_cost:.4f}")
 
     def _check_loop(self, tool_name: str, args: Dict[str, Any]):
         """

@@ -75,8 +75,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     api_app.state.web_log_buffer = web_log_buffer
     api_app.state.config = config
     
-    # Initialize active session
-    api_app.state.current_session_id = str(uuid4())
+    # Initialize active session later after DB load
+    # api_app.state.current_session_id = str(uuid4())
     # We will inject audit_logger later after init
 
     # 1.1 Configure API App (Routes & Static)
@@ -120,6 +120,16 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     audit_logger = AuditLogger()
     await audit_logger.init_db()
     api_app.state.audit_logger = audit_logger
+
+    # Load Last Session
+    last_session_id = await audit_logger.get_last_active_session_id()
+    if last_session_id:
+        api_app.state.current_session_id = last_session_id
+        logger.info(f"Resuming session: {last_session_id}")
+    else:
+        new_sid = str(uuid4())
+        api_app.state.current_session_id = new_sid
+        logger.info(f"Starting new session: {new_sid}")
 
     # 2.1 Initialize HeartbeatManager with Logger
     from auric.core.heartbeat import HeartbeatManager
@@ -343,8 +353,24 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      except Exception as e:
                          logger.error(f"Brain Error: {e}")
                          error_msg = f"My mind is clouded: {e}"
+                         
                          if source == "WEB":
                              await internal_bus.put({"level": "AGENT", "message": error_msg, "source": "BRAIN"})
+                         elif source == "PACT":
+                             # Attempt to report error back to user
+                             try:
+                                 adapter = pact_manager.adapters.get(platform)
+                                 if adapter and sender_id:
+                                     await adapter.send_message(sender_id, f"⚠️ **Error**: {e}")
+                             except Exception as send_err:
+                                 logger.error(f"Failed to send error to PACT: {send_err}")
+                             
+                             # Also log to console/web
+                             await internal_bus.put({
+                                 "level": "ERROR", 
+                                 "message": f"Error interacting with PACT ({platform}): {e}", 
+                                 "source": "BRAIN"
+                             })
 
             except asyncio.CancelledError:
                 logger.info("Brain Loop cancelled.")

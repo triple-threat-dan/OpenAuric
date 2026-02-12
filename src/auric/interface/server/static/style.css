@@ -1,12 +1,38 @@
 :root {
-    --bg-color: #0d0d0d;
-    --panel-bg: #1a1a1a;
+    /* Aliss Palette */
+    --shadow-grey: #120f1aff;
+    --dark-amethyst: #231147ff;
+    --dark-teal: #02212c;
+    --strong-cyan: #0abdc7ff;
+    --gold: #ffd600ff;
+    --tiger-flame: #fa6938ff;
+    --neon-pink: #fa167dff;
+
+    /* Derived Muted Colors */
+    --tiger-flame-muted: rgba(250, 105, 56, 0.15);
+    /* Low opacity orange */
+    --dark-teal-muted: rgba(0, 86, 115, 0.3);
+    /* Low opacity teal */
+
+    /* Theme Mapping */
+    --bg-color: #0b0e14;
+    --panel-bg: var(--shadow-grey);
+    /* Much darker, almost black, to make colors pop */
+
+    /* Using Dark Teal as border for a "Tech" feel, reducing purple */
+    --border-color: #1a2a3a;
+
     --text-color: #e0e0e0;
-    --accent-color: #00ff9d;
-    /* Cyan/Green Neon */
-    --accent-dim: #005f3b;
-    --error-color: #ff3333;
-    --border-color: #333;
+    --muted-text: #8aa0b0;
+    /* Cooler grey */
+
+    /* Main Accent is Cyan/Teal */
+    --accent-color: var(--strong-cyan);
+    --accent-secondary: var(--gold);
+    --accent-active: var(--neon-pink);
+
+    --error-color: var(--neon-pink);
+
     --font-mono: 'Courier New', Courier, monospace;
     --font-ui: system-ui, -apple-system, sans-serif;
 }
@@ -29,20 +55,55 @@ body {
     box-sizing: border-box;
 }
 
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    /* Slander scrollbars */
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--dark-teal);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--strong-cyan);
+}
+
 /* Header */
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid var(--accent-color);
+    border-bottom: 2px solid var(--border-color);
     padding-bottom: 10px;
     margin-bottom: 10px;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, rgba(10, 189, 199, 0.05) 50%, rgba(0, 0, 0, 0) 100%);
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo-img {
+    height: 50px;
+    width: auto;
+    filter: drop-shadow(0 0 5px var(--strong-cyan));
 }
 
 h1 {
     margin: 0;
     font-size: 1.5rem;
     letter-spacing: 2px;
+    color: var(--text-color);
+    text-shadow: 0 0 10px rgba(10, 189, 199, 0.4);
 }
 
 .highlight {
@@ -50,17 +111,20 @@ h1 {
 }
 
 .badge {
-    background: #333;
+    background: var(--dark-amethyst);
+    /* Keep purple for badge as highlight */
     padding: 5px 10px;
     border-radius: 4px;
     font-size: 0.8rem;
     font-weight: bold;
+    border: 1px solid var(--border-color);
 }
 
 .badge.online {
-    background: var(--accent-dim);
+    background: rgba(10, 189, 199, 0.1);
     color: var(--accent-color);
-    box-shadow: 0 0 10px var(--accent-dim);
+    box-shadow: 0 0 10px rgba(10, 189, 199, 0.2);
+    border-color: var(--accent-color);
 }
 
 /* Main Layout */
@@ -69,17 +133,16 @@ main {
     flex: 1;
     gap: 10px;
     overflow: hidden;
-    /* Prevent body scroll */
 }
 
-/* Chat Panel takes 60% width */
+/* Chat Panel */
 #chat-panel {
     flex: 3;
     display: flex;
     flex-direction: column;
 }
 
-/* Session Panel (Left) takes 20% width */
+/* Session Panel */
 #session-panel {
     flex: 1;
     display: flex;
@@ -87,7 +150,7 @@ main {
     min-width: 200px;
 }
 
-/* Sidebar takes 25% width */
+/* Sidebar */
 .sidebar {
     flex: 1;
     display: flex;
@@ -100,13 +163,14 @@ main {
     background: var(--panel-bg);
     border: 1px solid var(--border-color);
     padding: 15px;
-    /* flex: 1;  Removed generic flex: 1 to allow specific sizing */
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+    border-radius: 4px;
+    /* Slight rounded corners */
 }
 
-/* Panels inside sidebar share vertical space */
 .sidebar .panel {
     flex: 1;
 }
@@ -116,7 +180,12 @@ main {
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 10px;
     color: var(--accent-color);
-    font-size: 1.2rem;
+    font-size: 1.0rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
 }
 
 .panel-header {
@@ -152,6 +221,7 @@ main {
 #new-session-btn:hover {
     background: var(--accent-color);
     color: #000;
+    box-shadow: 0 0 8px var(--accent-color);
 }
 
 .content {
@@ -161,10 +231,12 @@ main {
 
 /* Focus Panel Specifics */
 #focus-content h3 {
-    color: #888;
+    color: var(--gold);
     text-transform: uppercase;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     margin-bottom: 5px;
+    border-bottom: 1px dashed var(--border-color);
+    padding-bottom: 2px;
 }
 
 #plan-list {
@@ -174,78 +246,77 @@ main {
 
 #plan-list li {
     margin-bottom: 5px;
+    font-size: 0.9em;
 }
 
 #plan-list li.completed {
-    color: #666;
+    color: var(--muted-text);
     text-decoration: line-through;
 }
 
 #working-memory pre {
     white-space: pre-wrap;
-    background: #000;
+    background: rgba(0, 0, 0, 0.3);
     padding: 10px;
-    border: 1px dashed #444;
-}
-
-/* Chat Panel Specifics */
-.chat-entry {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 10px;
-    padding: 10px;
-    border-radius: 4px;
-    line-height: 1.4;
-}
-
-.chat-entry .icon {
-    font-size: 1.2rem;
-}
-
-.chat-entry.user {
-    flex-direction: row-reverse;
-    background: #00331f;
-    /* Dark Green */
-    border: 1px solid var(--accent-dim);
-    margin-left: 20%;
-}
-
-.chat-entry.agent {
-    border: 1px solid #004488;
-    /* Dim Blue Border */
-    background: #050a14;
-    /* Very Dark Blue Background */
-    margin-right: 20%;
-    color: #f0f0f0;
-}
-
-.chat-entry.thought {
-    background: #1a0520;
-    /* Deep Purple */
-    border: 1px dashed #7d00aa;
-    /* Neon Purple */
-    color: #ad00ec;
-    /* Light Blue Text */
-    font-style: italic;
+    border-left: 2px solid var(--accent-color);
+    color: var(--muted-text);
     font-size: 0.85rem;
 }
 
-/* Markdown Content Styling */
-.markdown-content {
-    width: 100%;
-    overflow-wrap: break-word;
+/* Chat Styling */
+.chat-entry {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    /* More spacing */
+    padding: 15px;
+    border-radius: 6px;
+    line-height: 1.5;
+    transition: all 0.2s;
+    font-size: 0.95rem;
+    /* Slightly larger text */
 }
 
-.markdown-content p {
-    margin: 0 0 10px 0;
+/* User Message: Tiger Flame Theme */
+.chat-entry.user {
+    flex-direction: row-reverse;
+    background: var(--tiger-flame-muted);
+    border: 1px solid var(--tiger-flame);
+    margin-left: 15%;
+    /* Reduce margin slightly */
+    box-shadow: 0 0 15px rgba(250, 105, 56, 0.05);
 }
 
-.markdown-content p:last-child {
-    margin-bottom: 0;
+/* Agent Message: Dark Teal/Cyan Theme */
+.chat-entry.agent {
+    background: var(--dark-teal);
+    /* Solid-ish dark teal */
+    border: 1px solid var(--strong-cyan);
+    margin-right: 15%;
+    color: #ffffff;
+    box-shadow: 0 0 15px rgba(10, 189, 199, 0.05);
+}
+
+/* Thought: Amethyst/Pink Theme (Keep purple distinct for internal thoughts) */
+.chat-entry.thought {
+    background: rgba(35, 17, 71, 0.4);
+    /* Dark Amethyst low alpha */
+    border: 1px dashed var(--dark-amethyst);
+    color: #b0a0e0;
+    font-style: italic;
+    font-size: 0.85rem;
+    padding: 10px;
+    /* Smaller padding */
+}
+
+.markdown-content a {
+    color: var(--gold);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--gold);
 }
 
 .markdown-content pre {
-    background: #000;
+    background: #050608;
     padding: 10px;
     border-radius: 4px;
     overflow-x: auto;
@@ -256,53 +327,29 @@ main {
 }
 
 .markdown-content code {
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.1);
     padding: 2px 4px;
     border-radius: 2px;
-    font-family: 'Consolas', 'Monaco', monospace;
-    font-size: 0.9em;
+    color: var(--strong-cyan);
 }
 
-.markdown-content pre code {
-    background: transparent;
-    padding: 0;
-}
-
-.markdown-content ul,
-.markdown-content ol {
-    margin: 5px 0;
-    padding-left: 20px;
-}
-
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3 {
-    margin: 10px 0 5px 0;
-    font-size: 1.1em;
-    font-weight: bold;
-    color: var(--accent-color);
-}
-
-/* Log Panel Specifics */
+/* Logs */
 .log-entry {
     font-family: var(--font-mono);
-    font-size: 0.8rem;
-    /* Slightly smaller font for logs */
-    padding: 2px 0;
-    border-bottom: 1px solid #222;
-
-    /* Truncation (space efficiency) */
+    font-size: 0.75rem;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    color: var(--muted-text);
 }
 
 .log-entry.error {
     color: var(--error-color);
 }
 
-/* Footer */
+/* Footer & Input */
 footer {
     margin-top: 10px;
     border-top: 1px solid var(--border-color);
@@ -311,7 +358,7 @@ footer {
 
 #stats-bar {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--muted-text);
     margin-bottom: 10px;
     text-align: center;
 }
@@ -323,25 +370,38 @@ footer {
 
 input[type="text"] {
     flex: 1;
-    background: #000;
-    border: 1px solid var(--accent-color);
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
     color: var(--text-color);
-    padding: 10px;
+    padding: 12px;
     font-family: var(--font-mono);
+    transition: border 0.2s;
+    border-radius: 4px;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 8px rgba(10, 189, 199, 0.2);
 }
 
 button {
     background: var(--accent-color);
     color: #000;
     border: none;
-    padding: 0 20px;
+    padding: 0 25px;
     font-weight: bold;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: 4px;
 }
 
 button:hover {
     background: #fff;
+    box-shadow: 0 0 15px var(--accent-color);
+    transform: translateY(-1px);
 }
 
 /* Session List Items */
@@ -349,16 +409,17 @@ button:hover {
     padding: 10px;
     border-bottom: 1px solid var(--border-color);
     cursor: pointer;
-    transition: background 0.2s, border-left 0.2s;
+    transition: background 0.2s, border-left 0.2s, padding-left 0.2s;
 }
 
 .session-item:hover {
-    background: #252525;
+    background: rgba(255, 255, 255, 0.03);
+    padding-left: 15px;
+    /* Little nudge effect */
 }
 
 .session-item.active {
-    background: #0d1f15;
-    /* Dark Greenish tint */
+    background: rgba(10, 189, 199, 0.08);
     border-left: 3px solid var(--accent-color);
     color: #fff;
 }
@@ -367,14 +428,13 @@ button:hover {
     font-weight: bold;
     font-size: 0.85rem;
     margin-bottom: 3px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: var(--accent-secondary);
+    /* Gold for IDs */
 }
 
 .session-meta {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--muted-text);
     display: flex;
     justify-content: space-between;
 }

@@ -13,41 +13,42 @@
     <div class="container">
         <!-- Header -->
         <header>
-            <h1>OPEN<span class="highlight">AURIC</span> // THE ARCANE LIBRARY</h1>
+            <div class="logo-area">
+                <img src="ALISS_AURIC.png" alt="ALISS Logo" class="logo-img">
+                <h1>OPEN<span class="highlight">AURIC</span></h1>
+            </div>
             <div id="status-badge" class="badge">CONNECTING...</div>
         </header>
 
         <!-- Main Content -->
         <main>
             <!-- Left Sidebar (Sessions) -->
-            <!-- Left Sidebar (Sessions) -->
             <section class="panel" id="session-panel">
                 <div class="panel-header">
-                    <h2>📚 ARCHIVES</h2>
+                    <h2>📚 SESSIONS</h2>
                     <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
                 </div>
                 <div class="content scroll-box" id="session-list">
                     <div class="session-item active" id="session-live" onclick="switchSession(null)">
                         <div class="session-id">🔴 LIVE CHAT</div>
-                        <div class="session-meta">Assuming direct control...</div>
+                        <div class="session-meta">Monitoring...</div>
                     </div>
-                    <!-- Sessions injected here -->
                 </div>
             </section>
 
-            <!-- Chat Panel (The Void) - Takes up most space -->
+            <!-- Chat Panel -->
             <section class="panel" id="chat-panel">
-                <h2>🌌 THE VOID (Chat)</h2>
+                <h2>🌌 TERMINAL (Chat)</h2>
                 <div class="content scroll-box" id="chat-content">
-                    <!-- Chat history injected here -->
+                    <!-- Chat history -->
                 </div>
             </section>
 
-            <!-- Sidebar (Grimoire + Logs) -->
+            <!-- Sidebar (Context + Logs) -->
             <div class="sidebar">
-                <!-- Top Right: The Grimoire (Focus) -->
+                <!-- Top Right: Focus -->
                 <section class="panel" id="focus-panel">
-                    <h2>🔮 THE GRIMOIRE (Focus)</h2>
+                    <h2>🔮 SYSTEM CONTEXT</h2>
                     <div class="content" id="focus-content">
                         <div id="prime-directive"></div>
                         <ul id="plan-list"></ul>
@@ -55,13 +56,13 @@
                     </div>
                 </section>
 
-                <!-- Bottom Right: The Stream (Logs) -->
+                <!-- Bottom Right: Logs -->
                 <section class="panel" id="log-panel">
-                    <h2>📜 THE STREAM (Logs) <a href="llm_logs.html"
-                            style="font-size: 0.6em; float: right; color: var(--accent-color); text-decoration: none;">[VIEW
+                    <h2>📜 LOGS <a href="llm_logs.html"
+                            style="font-size: 0.6em; float: right; color: var(--accent-secondary); text-decoration: none;">[VIEW
                             FULL]</a></h2>
                     <div class="content scroll-box" id="log-content">
-                        <!-- Logs will be injected here -->
+                        <!-- Logs -->
                     </div>
                 </section>
             </div>
