@@ -23,7 +23,7 @@ def ensure_workspace():
         "HEARTBEAT.md",
         "SOUL.md",
         "USER.md",
-        "grimoire/ABILITIES.md",
+        "grimoire/SPELLS.md",
         "grimoire/FOCUS.md",
         "grimoire/MEMORY.md"
     ]
@@ -44,3 +44,23 @@ def ensure_workspace():
                 shutil.copy2(source, target)
             else:
                 logger.warning(f"Template {relative_path} missing in {AURIC_TEMPLATES_DIR}")
+
+    # Copy Default Spells
+    # Spells are located in src/auric/spells/default -> ~/.auric/grimoire/spells
+    
+    # Locate src/auric/spells/default relative to this file
+    # bootstrap.py is in src/auric/core/
+    PKG_ROOT = Path(__file__).resolve().parent.parent 
+    DEFAULT_SPELLS_DIR = PKG_ROOT / "spells" / "default"
+    TARGET_SPELLS_DIR = AURIC_WORKSPACE_DIR / "grimoire" / "spells"
+
+    if DEFAULT_SPELLS_DIR.exists():
+        print(f"DEBUG: Installing default spells from {DEFAULT_SPELLS_DIR} to {TARGET_SPELLS_DIR}")
+        logger.info("Installing default spells...")
+        if not TARGET_SPELLS_DIR.exists():
+            TARGET_SPELLS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # We use copytree with dirs_exist_ok=True to merge/update
+        shutil.copytree(DEFAULT_SPELLS_DIR, TARGET_SPELLS_DIR, dirs_exist_ok=True)
+    else:
+        logger.warning(f"Default spells directory not found at {DEFAULT_SPELLS_DIR}")

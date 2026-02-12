@@ -34,6 +34,13 @@ from datetime import datetime
 logger = logging.getLogger("auric.daemon")
 console = Console()
 
+class EndpointFilter(logging.Filter):
+    """
+    Filter out health checks and status polling from access logs.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/api/status") == -1 and record.getMessage().find("/api/sessions") == -1
+
 async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     """
     Entry point for the OpenAuric Daemon.
@@ -75,6 +82,20 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     # 1.1 Configure API App (Routes & Static)
     # Important: Include explicit routers BEFORE mounting catch-all StaticFiles at root "/"
     api_app.include_router(dashboard_router)
+
+    @api_app.post("/spells/reload")
+    async def reload_spells():
+        try:
+            # We access registry from state, which might be populated later
+            # Logic robust to missing registry if called too early
+            registry = getattr(api_app.state, "tool_registry", None)
+            if registry:
+                registry.load_spells()
+                return {"status": "ok", "count": len(registry._spells)}
+            else:
+                 return {"status": "error", "message": "ToolRegistry not initialized yet."}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     # Mount static files
     static_path = Path(__file__).parent.parent / "interface" / "server" / "static"
@@ -137,6 +158,9 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
             pass # Expected on shutdown
             
     # Launch server as a background task
+    # Apply filter to uvicorn access log
+    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+    
     api_task = asyncio.create_task(safe_serve())
     logger.info(f"API Server starting on {config.gateway.host}:{config.gateway.port}")
 
@@ -146,7 +170,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     from auric.memory.librarian import GrimoireLibrarian
     from auric.memory.focus_manager import FocusManager
     from auric.brain.rlm import RLMEngine
-    from auric.skills.tool_registry import ToolRegistry
+    from auric.spells.tool_registry import ToolRegistry
 
     gateway = LLMGateway(config, audit_logger=audit_logger)
     
@@ -157,6 +181,19 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
     tool_registry = ToolRegistry(config)
+    
+    # Inject into API state and add reload endpoint
+    api_app.state.tool_registry = tool_registry
+    
+
+
+    # Callback for RLM logging
+    async def log_to_bus(level: str, message: str):
+         await internal_bus.put({
+             "level": level,
+             "message": message,
+             "source": "BRAIN"
+         })
 
     rlm_engine = RLMEngine(
         config=config,
@@ -164,7 +201,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
         librarian=librarian,
         focus_manager=focus_manager,
         pact_manager=pact_manager,
-        tool_registry=tool_registry
+        tool_registry=tool_registry,
+        log_callback=log_to_bus
     )
 
     # 6. Start Brain Loop & Dispatcher
@@ -186,6 +224,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      elif level == "THOUGHT": color = "dim cyan"
                      elif level == "AGENT": color = "green"
                      elif level == "USER": color = "blue"
+                     elif level == "TOOL": color = "magenta"
                      
                      console.print(f"[{timestamp}] [{level}] {text}", style=color)
                 else:
