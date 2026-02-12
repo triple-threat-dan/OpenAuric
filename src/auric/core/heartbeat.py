@@ -8,12 +8,13 @@ of the "Dream Cycle" (maintenance/summarization) and "Vigil" (scheduled checks).
 import os
 import logging
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from auric.core.config import AURIC_WORKSPACE_DIR, load_config, timedelta
+from auric.core.config import AURIC_WORKSPACE_DIR, load_config
 from auric.memory import chronicles
+from auric.core.database import AuditLogger
 
 logger = logging.getLogger("auric.core.heartbeat")
 
@@ -25,8 +26,9 @@ class HeartbeatManager:
     
     _instance: Optional['HeartbeatManager'] = None
 
-    def __init__(self):
+    def __init__(self, audit_logger: Optional[AuditLogger] = None):
         self._last_active_timestamp: datetime = datetime.now()
+        self.audit_logger = audit_logger
         logger.debug(f"HeartbeatManager initialized at {self._last_active_timestamp}")
 
     @classmethod
@@ -42,7 +44,8 @@ class HeartbeatManager:
         Call this whenever the user sends a message or interacts via CLI.
         """
         self._last_active_timestamp = datetime.now()
-        logger.debug(f"Heartbeat: Activity detected. idle_timer reset at {self._last_active_timestamp}")
+        # logger.debug(f"Heartbeat: Activity detected. idle_timer reset at {self._last_active_timestamp}")
+        # Could log activity beat here, but might be too noisy. Let's stick to vigil/dream beats.
 
     def is_idle(self, threshold_minutes: int = 30) -> bool:
         """
@@ -158,6 +161,19 @@ async def run_vigil_task():
 
     # Check Heartbeat File
     heartbeat_file = Path.home() / ".auric" / "HEARTBEAT.md"
+    
+    # Log persistent heartbeat (Vigil Pulse)
+    # We need to get the audit logger instance. 
+    # Since run_vigil_task is static/function based, we instantiate a temp one or access via Manager if passed.
+    # For efficiency, let's just use the HeartbeatManager's logger if available (it refers to a singleton mostly).
+    hb = HeartbeatManager.get_instance()
+    if hb.audit_logger:
+        await hb.audit_logger.log_heartbeat(status="VIGIL", meta={
+            "active_window": active_window, 
+            "in_hours": True,
+            "has_heartbeat_file": heartbeat_file.exists()
+        })
+
     if heartbeat_file.exists():
          logger.info("Heartbeat: Checking vigil... (HEARTBEAT.md detected)")
          # Placeholder for actual vigil logic (Epic 5)

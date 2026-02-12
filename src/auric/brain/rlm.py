@@ -1,14 +1,13 @@
-
-import asyncio
 import logging
 import hashlib
 import json
 import json
 import re
+import inspect
 from types import SimpleNamespace
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +15,7 @@ from auric.core.config import AuricConfig, AURIC_WORKSPACE_DIR
 from auric.brain.llm_gateway import LLMGateway
 from auric.memory.librarian import GrimoireLibrarian
 from auric.memory.focus_manager import FocusManager
+from auric.spells.tool_registry import ToolRegistry
 
 logger = logging.getLogger("auric.brain.rlm")
 
@@ -79,8 +79,9 @@ class RLMEngine:
         gateway: LLMGateway,
         librarian: GrimoireLibrarian,
         focus_manager: FocusManager,
-        pact_manager: Any = None, # Typed as Any to avoid circular import for now
-        tool_registry: Any = None
+        pact_manager: Optional[Any] = None, # Avoid circular import if needed
+        tool_registry: Optional[ToolRegistry] = None,
+        log_callback: Optional[Callable[[str, str], None]] = None
     ):
         self.config = config
         self.gateway = gateway
@@ -88,6 +89,7 @@ class RLMEngine:
         self.focus_manager = focus_manager
         self.pact_manager = pact_manager
         self.tool_registry = tool_registry
+        self.log_callback = log_callback
         
         self.session_cost = 0.0
         self.recursion_guard = RecursionGuard(config.agents.max_recursion)
@@ -124,7 +126,12 @@ class RLMEngine:
         # 3. Assemble System Prompt
         system_prompt = self._assemble_system_prompt(task_context)
 
-        # 4. Call LLM
+        # 4. ReAct Loop
+        # We loop up to max_turns to allow for multi-step reasoning.
+        max_turns = 10
+        current_turn = 0
+        
+        # We start with the base messages
         messages = [{"role": "system", "content": system_prompt}]
 
         # Inject Chat History (only at depth 0)
@@ -138,91 +145,137 @@ class RLMEngine:
 
         messages.append({"role": "user", "content": user_query})
 
-        # Per requirements, we need to handle `spawn_sub_agent`. 
-        # Since we don't have a rigid Tool definition system in this file yet (it's injected via prompt or gateway),
-        # we will assume the LLM might return a tool call in the text or structured output.
-        # For simplicity and sticking to the prompt's "Sub-agents receive a filtered snapshot",
-        # We'll use the smart model.
+        final_response = ""
 
-        try:
-            response = await self.gateway.chat_completion(
-                messages=messages,
-                tier="smart",
-                session_id=session_id,
-                # We would verify tools here, e.g. tools=[spawn_sub_agent_schema]
-            )
-        except Exception as e:   
-            logger.error(f"LLM Call Failed: {e}")
-            raise
-
-        # Track Cost (Mock calculation)
-        self._track_cost(response)
-
-        # 5. Process Output & Handle Recursion
-        # Note: Litellm response format handling would go here.
-        # We check if the model wants to call 'spawn_sub_agent'.
+        # Collect Tool Schemas
+        tools_schemas = []
+        if self.tool_registry:
+            tools_schemas.extend(self.tool_registry.get_tools_schema())
         
-        # This is a simplified logic to demonstrate the recursion pattern
-        # In a full production system, we'd parse tool_calls properly.
-        content = response.choices[0].message.content or ""
-        tool_calls = getattr(response.choices[0].message, "tool_calls", None)
+        # Add spawn_sub_agent manually if not in registry (it is handled internally for now)
+        # We model it as a tool if we want the LLM to call it natively.
+        # But for now, let's just stick to registry tools + Pact tools if possible.
+        
+        # If no tools, pass None
+        tools_arg = tools_schemas if tools_schemas else None
 
-        if not tool_calls and content:
-            # Fallback: Parse Markdown JSON code blocks
-            tool_calls = self._parse_json_tool_calls(content)
+        while current_turn < max_turns:
+            current_turn += 1
+            
+            try:
+                response = await self.gateway.chat_completion(
+                    messages=messages,
+                    tier="smart",
+                    session_id=session_id,
+                    tools=tools_arg
+                )
+            except Exception as e:   
+                logger.error(f"LLM Call Failed: {e}")
+                raise
 
-        if tool_calls:
+            # Track Cost
+            self._track_cost(response)
+
+            content = response.choices[0].message.content or ""
+            tool_calls = getattr(response.choices[0].message, "tool_calls", None)
+            is_fallback = False
+
+            # Fallback for structured content in text
+            if not tool_calls and content:
+                tool_calls = self._parse_json_tool_calls(content)
+                if tool_calls:
+                    is_fallback = True
+
+            # If no tool calls, we are done
+            if not tool_calls:
+                final_response = content
+                return final_response
+
+            # Append Assistant's thought/tool-call to history
+            messages.append(response.choices[0].message)
+
+            # Process Tool Calls
             for tool_call in tool_calls:
                 fn_name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments)
+                # Fallback parser might give arguments as dict already or string
+                # _parse_json_tool_calls converts to string to match native object, 
+                # but let's be safe.
+                args_val = tool_call.function.arguments
+                if isinstance(args_val, str):
+                    try:
+                        args = json.loads(args_val)
+                    except json.JSONDecodeError:
+                         # Try cleaning? Or just fail.
+                         logger.error(f"Failed to parse arguments for {fn_name}")
+                         args = {} 
+                else:
+                    args = args_val
+
                 
                 # Check for loops
                 self._check_loop(fn_name, args)
+                
+                # Log tool execution to CLI/Bus via callback
+                if hasattr(self, "log_callback") and self.log_callback:
+                    log_msg = f"Executing {fn_name}"
+                    # Add args if concise, or maybe just simple name
+                    # Let's show args for clarity
+                    log_msg += f" with args: {json.dumps(args)}"
+                    
+                    if inspect.iscoroutinefunction(self.log_callback):
+                        await self.log_callback("TOOL", log_msg)
+                    else:
+                        self.log_callback("TOOL", log_msg)
+
+                result_content = ""
 
                 if fn_name == "spawn_sub_agent":
                     instruction = args.get("instruction")
                     logger.info(f"Spawning Sub-Agent: {instruction[:50]}...")
-                    
                     # RECURSION HAPPENS HERE
                     sub_result = await self.think(instruction, depth=depth + 1)
-                    
-                    # Inject result back
-                    return f"Sub-Agent Result: {sub_result}\n\nParent Analysis: {content}"
+                    result_content = f"Sub-Agent Result: {sub_result}"
                 
-                # Dynamic Tool Execution for Pacts
-                elif self.pact_manager:
-                    # Generic Pact Tool Execution
+                else:
+                    # Dynamic Tool Execution
                     try:
-                        # Attempt to execute via PactManager
-                        # We don't filter by name here, we let PactManager decide if it owns the tool
-                        # But we should probably check if it looks like a tool call we know?
-                        # RLM doesn't know the tool names unless we cache them.
-                        # However, based on the prompt, we just want to delegate.
-                        try:
-                            # Try Registry First (Internal Tools)
-                            if self.tool_registry:
-                                registry_result = await self.tool_registry.execute_tool(fn_name, args)
-                                if "Tool" not in registry_result and "Error: Tool" not in registry_result: 
-                                    # Very loose check, but execute_tool returns string. 
-                                    # If it says "Error: Tool ... not found", we continue to Pact.
-                                    # Actually, let's just try running it.
-                                    pass
-
-                            # Better logic: Check if it's an internal tool
-                            if self.tool_registry and fn_name in self.tool_registry._internal_tools: 
-                                result = await self.tool_registry.execute_tool(fn_name, args)
-                                return f"Tool {fn_name} executed: {result}"
-                            
+                        # Try Registry First (Internal Tools)
+                        if self.tool_registry and fn_name in self.tool_registry._internal_tools: 
+                            result = await self.tool_registry.execute_tool(fn_name, args)
+                            result_content = f"Tool {fn_name} executed: {result}"
+                        elif self.tool_registry and fn_name in self.tool_registry._spells:
+                             # Check if it's a spell
+                             result = await self.tool_registry.execute_tool(fn_name, args)
+                             result_content = f"Spell {fn_name} executed: {result}"
+                        elif self.pact_manager:
                             # Fallback to Pact
                             result = await self.pact_manager.execute_tool(fn_name, args)
-                            return f"Tool {fn_name} executed successfully: {result}"
-                        except ValueError:
-                             # Tool not found in pacts, maybe it's something else?
-                             pass
+                            result_content = f"Tool {fn_name} executed successfully: {result}"
+                        else:
+                             result_content = f"Error: Tool {fn_name} not found."
                     except Exception as e:
                         logger.error(f"Failed to execute {fn_name}: {e}")
-                        return f"Error executing {fn_name}: {e}"
+                        result_content = f"Error executing {fn_name}: {e}"
+
+                # Append Tool Result to messages
+                if is_fallback:
+                    # Fallback calls are not registered in the assistant message as authentic tool calls.
+                    # We must reply as User to continue the conversation flow.
+                    messages.append({
+                        "role": "user",
+                        "content": f"Tool '{fn_name}' Result: {result_content}"
+                    })
+                else:
+                    # Native tool call requires matching ID
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": fn_name,
+                        "content": result_content
+                    })
         
+        return final_response if final_response else "Task completed (max turns reached)."
+
     def _parse_json_tool_calls(self, content: str) -> List[Any]:
         """
         Fallback parser for markdown-wrapped JSON tool calls.
@@ -243,7 +296,9 @@ class RLMEngine:
                     # RLM expects tool_call.function.name and .arguments (as string)
                     args_str = json.dumps(data["arguments"]) if isinstance(data["arguments"], dict) else str(data["arguments"])
                     
+                    import uuid
                     tool_call = SimpleNamespace(
+                        id=f"call_{uuid.uuid4().hex[:8]}", # Dummy ID
                         function=SimpleNamespace(
                             name=data["name"],
                             arguments=args_str
@@ -288,47 +343,26 @@ class RLMEngine:
         if memory_path.exists():
             parts.append(memory_path.read_text(encoding="utf-8"))
 
-        abilities_path = AURIC_WORKSPACE_DIR / "grimoire" / "ABILITIES.md"
-        if abilities_path.exists():
-            parts.append(abilities_path.read_text(encoding="utf-8"))
+        spells_path = AURIC_WORKSPACE_DIR / "grimoire" / "SPELLS.md"
+        if spells_path.exists():
+            parts.append(spells_path.read_text(encoding="utf-8"))
 
         # 5. The Tools
         # In a real system, we'd iterate over available tools and dump their schemas.
         # For now, we inject a generic placeholder or specific instructions.
-        parts.append("""
-## Available Tools
-You have access to the following tools. Use them to solve the user's request.
+        # 5. The Tools
+        # We use Native Function Calling. 
+        # However, we can list high-level capabilities here if needed.
+        parts.append("## Available Tools\nYou have access to native tools for file operations, shell execution, and python coding. Use them when needed.")
 
-### Tool Usage Instructions
-1. To call a tool, output ONLY the JSON code block representing the tool call.
-2. Do not provide commentary before or after the JSON.
-3. If you output a tool call, your turn ends immediately. Do not generate further text.
-4. Format:
-```json
-{
-  "name": "tool_name",
-  "arguments": {
-    "arg_name": "value"
-  }
-}
-```
-
-### Native Tools
-- spawn_sub_agent(instruction: str): clear_instruction -> str
-  Use this to delegate complex sub-tasks to a recursive instance of yourself. 
-  Do not use if the task is simple.
-""")
         # Inject Pact Tools
         if self.pact_manager:
             pact_tools = self.pact_manager.get_all_tools_definitions()
             if pact_tools:
                 parts.append(pact_tools)
 
-        # Inject Registry Tools
-        if self.tool_registry:
-            registry_schemas = self.tool_registry.get_tools_schema()
-            if registry_schemas:
-                parts.append(f"## Registry Tools:\n{json.dumps(registry_schemas, indent=2)}")
+        # Registry Tools are now passed natively to the LLM context.
+        # We do not dump their schemas into the text prompt anymore.
         
 
         # 6. The Memory (Snapshot)

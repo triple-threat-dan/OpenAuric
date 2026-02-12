@@ -130,9 +130,25 @@ class LLMGateway:
                     
                     content = response.choices[0].message.content if response.choices else ""
                     
+                    # Serialize input messages ensuring they are pure dicts
+                    serialized_messages = []
+                    for msg in messages:
+                        if isinstance(msg, dict):
+                            serialized_messages.append(msg)
+                        elif hasattr(msg, "model_dump"):
+                            serialized_messages.append(msg.model_dump())
+                        elif hasattr(msg, "to_dict"):
+                            serialized_messages.append(msg.to_dict())
+                        else:
+                            # Fallback
+                            try:
+                                serialized_messages.append(dict(msg))
+                            except Exception:
+                                serialized_messages.append({"role": "unknown", "content": str(msg)})
+
                     interaction = LLMInteraction(
                         model=model,
-                        input_messages=messages, # Pydantic will serialize this to Json
+                        input_messages=serialized_messages, # Pydantic will serialize this to Json
                         output_content=content or "",
                         prompt_tokens=p_tokens,
                         completion_tokens=c_tokens,
