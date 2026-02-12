@@ -1,13 +1,11 @@
-Here is the `README.md` for the repository. It is written to be the single source of truth for your engineering team and the first touchpoint for the community.
-
----
+![auric, the recursive agentic warlock](ALISS_AURIC.png)
 
 # OpenAuric
 
 > **The Recursive Agentic Warlock.**
-> *Invoke the Pact. Automate the Realm.*
+> *Invoke the Pact. Automate the Realm.*.
 
-**OpenAuric** is a local, autonomous AI agent architecture designed for developers who need more than a chatbot. It is a **Recursive Language Model (RLM)** system that manages its own context, writes its own tools, and persists memory through a structured file system called *The Grimoire*.
+**OpenAuric** is a local, autonomous AI agent architecture designed for developers who need more than a chatbot. It is a **Recursive Language Model (RLM)** system that manages its own context, writes its own tools in *The Grimoire*, and persists memory through a structured file system.
 
 Unlike standard agents that suffer from context drift, Auric anchors itself using a persistent "Focus" state and recursively spawns sub-agents to handle complex tasks without polluting the main context window. The Dream Cycle consolidates the agent's memory and ensures long-term stability.
 
@@ -29,20 +27,20 @@ OpenAuric is built on the metaphor of the **Warlock**:
 * **🧠 Recursive Language Model (RLM):** Auric can "spawn" sub-agents to solve specific problems (e.g., "Summarize this PDF") and return only the result to the main thread, saving tokens and maintaining coherence.
 * **📚 The Grimoire:** A transparent, file-based memory system.
 * `FOCUS.md`: The "Working Memory" representing the current task state. Loaded on every turn.
-* `incantations/`: Python scripts the agent wrote to solve past problems.
+* `grimoire/`: Python scripts the agent wrote to solve past problems.
 * `chronicles/`: Episodic memories and daily summaries.
 
 
 * **🛡️ The Circle (Sandbox):** A safe Python execution environment where Auric can write and run code to query its own memory or perform tasks.
 * **👁️ Omni-Channel Pacts:** Connect Auric to Telegram, Discord, and GitHub.
 * **💤 The Dream Cycle:** An automated consolidation process that runs when the agent sleeps, summarizing the day's logs into permanent knowledge.
-* **🖥️ Textual Dashboard:** A "Matrix-style" TUI (Terminal User Interface) to visualize the agent's thought process and memory state in real-time.
+* **🖥️ Frontend UI:** A web UI to chat, check logs, and visualize the agent's thought process and memory state in real-time.
 
 ---
 
 ## ⚡ Installation
 
-OpenAuric is designed for **Linux** and **WSL2** environments.
+OpenAuric is designed for **Windows**, **Linux** and **WSL2** environments, but should run anywhere python 3.11+ is installed.
 
 ### The Summoning (Quick Install)
 
@@ -76,10 +74,7 @@ Manage the daemon process using the CLI:
 # Awaken the agent (starts the background daemon)
 auric start
 
-# Open the TUI Dashboard (View logs, memory, and status)
-auric dashboard
-
-# Check connection status to your Patron
+# Check connection status to your Patron (TODO)
 auric status
 
 # Put the agent to sleep (Stops daemon & triggers Dream Cycle)
@@ -134,11 +129,11 @@ User asked: "Scrape stock prices."
 
 ```
 
-### `incantations/` (Skills)
+### `grimoire/` (Skills)
 
 Folder containing Python scripts Auric has written.
 
-* *Example:* `incantations/docker_fix.py`
+* *Example:* `grimoire/docker_fix.py`
 
 ### `codex/` (Facts)
 
