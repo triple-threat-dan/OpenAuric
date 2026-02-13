@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Callable, Optional, Union
 import inspect
 import subprocess
 
-from auric.core.config import AuricConfig
+from auric.core.config import AuricConfig, AURIC_ROOT
 from auric.spells.sandbox import SandboxManager
 
 logger = logging.getLogger("auric.spells")
@@ -41,7 +41,7 @@ class ToolRegistry:
         self.sandbox = SandboxManager(config)
 
         # Load Spells from Grimoire
-        self.spells_dir = Path("~/.auric/grimoire/spells").expanduser()
+        self.spells_dir = AURIC_ROOT / "grimoire"
         self.load_spells()
 
     def _register_internal_tool(self, func: Callable):

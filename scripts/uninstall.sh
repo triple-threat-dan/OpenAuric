@@ -2,7 +2,8 @@
 set -e
 
 SERVICE_FILE="$HOME/.config/systemd/user/auric.service"
-AURIC_HOME="$HOME/.auric"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AURIC_HOME="$REPO_ROOT/.auric"
 
 echo "🛑 Initiating OpenAuric Removal Protocol..."
 

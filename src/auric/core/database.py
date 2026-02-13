@@ -64,11 +64,13 @@ class Heartbeat(SQLModel, table=True):
     metadata_json: Optional[str] = None # JSON string for extra info like load, memory, etc.
 
 
+from auric.core.config import AURIC_ROOT
+
 class AuditLogger:
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
             # Default to ~/.auric/auric.db
-            db_path = Path.home() / ".auric" / "auric.db"
+            db_path = AURIC_ROOT / "auric.db"
         
         self.db_path = db_path
         # Ensure directory exists

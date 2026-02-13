@@ -5,3 +5,4 @@ venv/
 .env/
 test_output.txt
 test_results.txt
+.auric/ 
