@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from auric.core.config import AURIC_WORKSPACE_DIR, load_config
+from auric.core.config import AURIC_WORKSPACE_DIR, AURIC_ROOT, load_config
 from auric.memory import chronicles
 from auric.core.database import AuditLogger
 
@@ -85,7 +85,7 @@ def can_dream() -> bool:
     # Condition 2: Data Availability
     # Check ~/.auric/logs/current_session.log (assuming standard path)
     # We can refine this path later if config changes.
-    log_path = AURIC_WORKSPACE_DIR / "logs" / "current_session.log"
+    log_path = AURIC_ROOT / "logs" / "current_session.log"
     
     if not log_path.exists():
         logger.debug("Skipping Dream Cycle: No session log found.")
@@ -160,7 +160,7 @@ async def run_vigil_task():
          logger.warning(f"Heartbeat: Could not parse active hours '{active_window}': {e}. Proceeding anyway.")
 
     # Check Heartbeat File
-    heartbeat_file = Path.home() / ".auric" / "HEARTBEAT.md"
+    heartbeat_file = AURIC_ROOT / "HEARTBEAT.md"
     
     # Log persistent heartbeat (Vigil Pulse)
     # We need to get the audit logger instance. 

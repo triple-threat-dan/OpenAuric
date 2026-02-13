@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional, Callable
 
 from pydantic import BaseModel, Field
 
-from auric.core.config import AuricConfig, AURIC_WORKSPACE_DIR
+from auric.core.config import AuricConfig, AURIC_WORKSPACE_DIR, AURIC_ROOT, AURIC_ROOT
 from auric.brain.llm_gateway import LLMGateway
 from auric.memory.librarian import GrimoireLibrarian
 from auric.memory.focus_manager import FocusManager
@@ -318,20 +318,20 @@ class RLMEngine:
         parts = []
 
         # 0. The Agent (Core Requirements)
-        agent_path = AURIC_WORKSPACE_DIR / "AGENT.md"
+        agent_path = AURIC_ROOT / "AGENT.md"
         if agent_path.exists():
              parts.append(agent_path.read_text(encoding="utf-8"))
         else:
              parts.append("You are OpenAuric, a recursive AI agent.")
 
         # 1. The Soul (Personality)
-        soul_path = AURIC_WORKSPACE_DIR / "SOUL.md"
+        soul_path = AURIC_ROOT / "SOUL.md"
         if soul_path.exists():
             parts.append(soul_path.read_text(encoding="utf-8"))
 
         # 2. The User (Only at Depth 0)
         if task_context.depth == 0:
-            user_path = AURIC_WORKSPACE_DIR / "USER.md"
+            user_path = AURIC_ROOT / "USER.md"
             if user_path.exists():
                 parts.append(f"## User Context\n{user_path.read_text(encoding='utf-8')}")
 
@@ -339,11 +339,11 @@ class RLMEngine:
         parts.append(f"## Current Time\n{datetime.now().isoformat()}")
 
         # 4 Memory & Abilities
-        memory_path = AURIC_WORKSPACE_DIR / "grimoire" / "MEMORY.md"
+        memory_path = AURIC_ROOT / "memories" / "MEMORY.md"
         if memory_path.exists():
             parts.append(memory_path.read_text(encoding="utf-8"))
 
-        spells_path = AURIC_WORKSPACE_DIR / "grimoire" / "SPELLS.md"
+        spells_path = AURIC_ROOT / "grimoire" / "SPELLS.md"
         if spells_path.exists():
             parts.append(spells_path.read_text(encoding="utf-8"))
 
@@ -372,7 +372,7 @@ class RLMEngine:
                 parts.append(snippet)
 
         # 7. The Focus (Working Memory)
-        focus_path = AURIC_WORKSPACE_DIR / "grimoire" / "FOCUS.md"
+        focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
         if focus_path.exists():
             parts.append(focus_path.read_text(encoding="utf-8"))
         
