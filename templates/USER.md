@@ -13,7 +13,8 @@
 - **Profession:** [Digital Wizard / Developer / Writer]
 - **Primary Language:** English
 - **Timezone:** UTC-5
-
-## Preferences
-- **Communication Style:** Concise, technical, and slightly arcane.
-- **Code Style:** Pythonic, typed, and well-documented.
+- **Facts and Notes:**
+  - [Add any facts or notes about your user here]
+- **Preferences:**
+  - **Communication Style:** Concise, technical, and slightly arcane.
+  - **Code Style:** Pythonic, typed, and well-documented.

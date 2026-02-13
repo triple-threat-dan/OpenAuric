@@ -152,9 +152,24 @@ class RLMEngine:
         if self.tool_registry:
             tools_schemas.extend(self.tool_registry.get_tools_schema())
         
-        # Add spawn_sub_agent manually if not in registry (it is handled internally for now)
-        # We model it as a tool if we want the LLM to call it natively.
-        # But for now, let's just stick to registry tools + Pact tools if possible.
+        # Add spawn_sub_agent manually
+        tools_schemas.append({
+            "type": "function",
+            "function": {
+                "name": "spawn_sub_agent",
+                "description": "Delegates a complex sub-task to a recursive sub-agent. The sub-agent has its own context and tools. Use this to break down large tasks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instruction": {
+                            "type": "string",
+                            "description": "The specific instruction for the sub-agent to execute."
+                        }
+                    },
+                    "required": ["instruction"]
+                }
+            }
+        })
         
         # If no tools, pass None
         tools_arg = tools_schemas if tools_schemas else None

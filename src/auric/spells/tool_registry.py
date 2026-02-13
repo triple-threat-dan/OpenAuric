@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Callable, Optional, Union
 import inspect
 import subprocess
+import re
 
 from auric.core.config import AuricConfig, AURIC_ROOT
 from auric.spells.sandbox import SandboxManager
@@ -212,6 +213,18 @@ class ToolRegistry:
         """
         try:
             file_path = Path(path)
+            
+            # Heuristic to fix common LLM double-escaping issue (e.g. for MEMORY.md)
+            # If content is meant to be a markdown/text file but contains literal "\n" 
+            # sequences without any actual newlines, we assume it was improperly escaped.
+            if path.lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
+                 if "\\n" in content and "\n" not in content:
+                      # Unescape literal backslash+n unless preceded by a backslash
+                      # This handles the case where the LLM wrote "Line 1\nLine 2" as a single line
+                      # but preserves "Line 1\\nLine 2" (literal \n).
+                      content = re.sub(r'(?<!\\)\\n', '\n', content)
+                      logger.info(f"Automatically unescaped content for {path}")
+
             # Ensure parent directory exists
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
