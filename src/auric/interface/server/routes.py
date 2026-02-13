@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from auric.core.config import AURIC_WORKSPACE_DIR
+from auric.core.config import AURIC_WORKSPACE_DIR, AURIC_ROOT
 from pydantic import BaseModel
 
 from auric.memory.focus_manager import FocusManager
@@ -55,7 +55,7 @@ async def get_status(request: Request):
     # For performance, maybe we should have a singleton injected, but for now:
     try:
         # Assuming standard path for now, or we could inject config
-        focus_path = AURIC_WORKSPACE_DIR / "grimoire" / "FOCUS.md"
+        focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
         focus_manager = FocusManager(focus_path)
         focus_model = focus_manager.load()
         focus_data = focus_model.model_dump()

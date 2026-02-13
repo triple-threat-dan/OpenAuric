@@ -1,9 +1,9 @@
 $ErrorActionPreference = "Stop"
 
 # --- Configuration ---
-$AuricHome = "$HOME\.auric"
 $RepoRoot = Resolve-Path "$PSScriptRoot\.."
-$TemplateDir = "$RepoRoot\.auric"
+$AuricHome = "$RepoRoot\.auric"
+$TemplateDir = "$RepoRoot\templates"
 $StartupFolder = [System.Environment]::GetFolderPath("Startup")
 $ShortcutPath = Join-Path $StartupFolder "OpenAuric.lnk"
 

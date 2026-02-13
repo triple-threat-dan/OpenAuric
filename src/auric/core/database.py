@@ -64,11 +64,13 @@ class Heartbeat(SQLModel, table=True):
     metadata_json: Optional[str] = None # JSON string for extra info like load, memory, etc.
 
 
+from auric.core.config import AURIC_ROOT
+
 class AuditLogger:
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
             # Default to ~/.auric/auric.db
-            db_path = Path.home() / ".auric" / "auric.db"
+            db_path = AURIC_ROOT / "auric.db"
         
         self.db_path = db_path
         # Ensure directory exists
@@ -304,3 +306,11 @@ class AuditLogger:
                 session.name = new_name
                 db.add(session)
                 await db.commit()
+
+    async def get_last_active_session_id(self) -> Optional[str]:
+        """Retrieves the ID of the most recently active session."""
+        async with AsyncSession(self.engine) as session:
+            # Check ChatMessages for most recent timestamp
+            statement = select(ChatMessage.session_id).order_by(ChatMessage.timestamp.desc()).limit(1)
+            result = await session.exec(statement)
+            return result.one_or_none()

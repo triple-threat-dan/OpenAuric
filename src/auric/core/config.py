@@ -18,7 +18,8 @@ from pydantic_settings import BaseSettings
 
 # Constants
 AURIC_CONFIG_FILE = "auric.json"
-AURIC_WORKSPACE_DIR = Path.home() / ".auric" / "workspace"
+AURIC_ROOT = Path.cwd() / ".auric"
+AURIC_WORKSPACE_DIR = AURIC_ROOT / "workspace"
 # Assume templates are relative to source root if running from source,
 # or packaged. For this repo structure:
 # src/auric/core/config.py -> ../../../templates
@@ -109,7 +110,7 @@ class ConfigLoader:
     Enforces strict file permissions (0600) for security.
     """
     
-    DEFAULT_CONFIG_DIR = Path.home() / ".auric"
+    DEFAULT_CONFIG_DIR = AURIC_ROOT
     CONFIG_FILENAME = "auric.json"
 
     @classmethod

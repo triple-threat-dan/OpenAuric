@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 # Shared modules
-from auric.core.config import load_config, AuricConfig, ConfigLoader
+from auric.core.config import load_config, AuricConfig, ConfigLoader, AURIC_ROOT
 from auric.spells.tool_registry import ToolRegistry
 
 app = typer.Typer(help="OpenAuric: The Recursive Agentic Warlock")
@@ -28,7 +28,7 @@ app.add_typer(spells_app, name="spells")
 
 console = Console()
 
-PID_FILE = Path("~/.auric/auric.pid").expanduser()
+PID_FILE = AURIC_ROOT / "auric.pid"
 
 # --- Daemon Commands ---
 
@@ -45,7 +45,7 @@ def start():
             old_pid = int(PID_FILE.read_text().strip())
             if psutil.pid_exists(old_pid):
                 console.print(f"[bold red]Daemon potentially already running (PID {old_pid}).[/bold red]")
-                console.print("Run 'auric stop' or delete ~/.auric/auric.pid if this is an error.")
+                console.print(f"Run 'auric stop' or delete {PID_FILE} if this is an error.")
                 raise typer.Exit(1)
             else:
                 console.print(f"[yellow]Found stale PID file ({old_pid}). Overwriting...[/yellow]")
@@ -53,6 +53,8 @@ def start():
              console.print("[yellow]Invalid PID file. Overwriting...[/yellow]")
 
     current_pid = os.getpid()
+    # Ensure directory exists
+    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(current_pid))
     
     def cleanup_pid():

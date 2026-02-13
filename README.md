@@ -1,4 +1,6 @@
-![auric, the recursive agentic warlock](ALISS_AURIC.png)
+<p align="center">
+  <img src="ALISS_AURIC.png" alt="auric, the recursive agentic warlock">
+</p>
 
 # OpenAuric
 
@@ -17,8 +19,8 @@ OpenAuric is built on the metaphor of the **Warlock**:
 
 * **The User (You):** The user and administrator.
 * **The Agent (Auric):** The local Python daemon running on your machine.
-* **The Patron (LLM):** The raw intelligence provider (OpenAI, Anthropic, Gemini, or local Ollama), connected via LiteLLM.
-* **The Grimoire (Memory):** A structured file system (`~/.auric/grimoire`) where the agent stores its Working Memory, Long-term Facts, and Self-written Scripts.
+* **The Patron (LLM):** The raw intelligence provider (OpenAI, Anthropic, Gemini, or local Ollama), connected via LiteLLM, empowering the agent.
+* **The Grimoire (Memory):** A structured file system (`.auric/grimoire`) where the agent stores its Working Memory, Long-term Facts, and Self-written Scripts.
 
 ---
 
@@ -26,9 +28,9 @@ OpenAuric is built on the metaphor of the **Warlock**:
 
 * **🧠 Recursive Language Model (RLM):** Auric can "spawn" sub-agents to solve specific problems (e.g., "Summarize this PDF") and return only the result to the main thread, saving tokens and maintaining coherence.
 * **📚 The Grimoire:** A transparent, file-based memory system.
-* `FOCUS.md`: The "Working Memory" representing the current task state. Loaded on every turn.
-* `grimoire/`: Python scripts the agent wrote to solve past problems.
-* `chronicles/`: Episodic memories and daily summaries.
+* `memories/FOCUS.md`: The "Working Memory" representing the current task state. Loaded on every turn.
+* `memories/MEMORY.md`: Long-term semantic memory.
+* `grimoire/`: Python scripts (Spells) the agent wrote or possesses to solve problems.
 
 
 * **🛡️ The Circle (Sandbox):** A safe Python execution environment where Auric can write and run code to query its own memory or perform tasks.
@@ -46,7 +48,7 @@ OpenAuric is designed for **Windows**, **Linux** and **WSL2** environments, but 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/openauric.git
+git clone https://github.com/triple-threat-dan/openauric.git
 cd openauric
 
 # Run the summoning script
@@ -58,7 +60,7 @@ chmod +x install.sh
 This script will:
 
 1. Check for Python 3.11+.
-2. Create the `~/.auric` directory structure.
+2. Create the `.auric` directory structure in the project root.
 3. Install dependencies in a dedicated virtual environment.
 4. Alias the `auric` command in your shell.
 
@@ -87,7 +89,7 @@ auric stop
 Configure your Patron (LLM Provider) and API keys:
 
 ```bash
-# Opens ~/.auric/auric.json in your default editor
+# Opens .auric/auric.json in your default editor
 auric config
 
 ```
@@ -112,7 +114,7 @@ Example `auric.json` snippet:
 
 ## 📖 The Grimoire (Memory System)
 
-Auric's intelligence relies on **The Grimoire**, located at `~/.auric/grimoire/`. You are encouraged to read and edit these files manually—Auric will see your changes instantly.
+Auric's intelligence relies on **The Grimoire**, located at `.auric/grimoire/` and **Memories** at `.auric/memories/`. You are encouraged to read and edit these files manually—Auric will see your changes instantly.
 
 ### `FOCUS.md` (The Scratchpad)
 
@@ -135,11 +137,11 @@ Folder containing Python scripts Auric has written.
 
 * *Example:* `grimoire/docker_fix.py`
 
-### `codex/` (Facts)
+### `memories/` (Context)
 
-Long-term semantic memory.
+Long-term semantic memory (`MEMORY.md`) and current focus (`FOCUS.md`).
 
-* *Example:* `codex/project_specs.md`
+* *Example:* `.auric/memories/MEMORY.md`
 
 ---
 
