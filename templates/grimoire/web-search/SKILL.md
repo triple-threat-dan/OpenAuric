@@ -1,1 +1,19 @@
----\nname: web-search\ndescription: Searches the web via DuckDuckGo API (free/no key). Params: query (req), num_results (opt=10). Returns JSON results list.\n---\n\nUse for quick facts/research. run.py calls DDG Instant Answer API, extracts summary + related topics into clean JSON.\n\n**Input JSON:** `{"query": "str", "num_results": 10}`\n**Output:** `{"results": [{"title": "str", "snippet": "str", "url": "str"}]}` or `{"error": "str"}`\n\nTest: weather, news, definitions. Fast, no API key drama. 💨
+---
+name: web-search
+description: Searches the web using the Brave Search API. Requires BRAVE_SEARCH_API_KEY env var.
+parameters_json: {"type": "object", "properties": {"query": {"type": "string", "description": "The search query."}, "num_results": {"type": "integer", "description": "Number of results to return (default 10, max 20)."}}, "required": ["query"]}
+---
+
+Performs a web search and returns a list of results with titles, snippets, and URLs.
+
+**Parameters:**
+- `query` (str): The search query.
+- `num_results` (int, optional): Number of results to return (default: 10, max: 20).
+
+**Output:**
+JSON object with a "results" key containing a list of result objects.
+Each result object has:
+- `title` (str)
+- `description` (str)
+- `url` (str)
+- `age` (str, optional)

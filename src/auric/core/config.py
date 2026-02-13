@@ -83,6 +83,7 @@ class LLMKeys(BaseModel):
     anthropic: Optional[str] = None
     gemini: Optional[str] = None
     openrouter: Optional[str] = None
+    brave: Optional[str] = None
 
 class AuricConfig(BaseSettings):
     """

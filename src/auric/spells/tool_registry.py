@@ -7,6 +7,7 @@ standard library tools (filesystem operations) and external MCP servers.
 """
 
 import logging
+import os
 import json
 import asyncio
 from pathlib import Path
@@ -88,12 +89,35 @@ class ToolRegistry:
                         name = meta["name"]
                         instructions = content[end_frontmatter+3:].strip()
                         
+                        # Parse parameters if available (using a simple YAML-like parser for the dict structure)
+                        # Since we don't have PyYAML, we'll need to rely on the user providing valid JSON-like structure 
+                        # or simple key-value pairs if we want to avoid complex parsing.
+                        # Wait, the meta logic above only handles simple key:value lines.
+                        # Let's import yaml if available, or just fallback to the hardcoded default for now
+                        # but ideally we should parse the 'parameters' block.
+                        
+                        # Actually, better yet, let's just use json.loads if the user provides parameters as a JSON string in a specific field?
+                        # Or, since we want to support this properly, let's assume we can add PyYAML to dependencies later.
+                        # For now, let's look for a hacky way or just use a `parameters_json` field in frontmatter for safety.
+                        
+                        # Pivot: As I cannot easily add PyYAML dependency right now without user permission/restart.
+                        # I will modify the `SKILL.md` to use a `parameters_json` field which I can parse with json.loads.
+                        # This is robust and doesn't require new deps.
+                        
+                        parameters = {}
+                        if "parameters_json" in meta:
+                            try:
+                                parameters = json.loads(meta["parameters_json"])
+                            except json.JSONDecodeError:
+                                logger.error(f"Failed to parse parameters_json for {name}")
+
                         spell_data = {
                             "name": name,
                             "description": meta.get("description", "No description"),
                             "path": path.parent,
                             "instructions": instructions,
-                            "script": self._find_script(path.parent)
+                            "script": self._find_script(path.parent),
+                            "parameters": parameters
                         }
                         self._spells[name] = spell_data
                         logger.debug(f"Loaded spell: {name}")
@@ -343,12 +367,18 @@ class ToolRegistry:
             import json
             args_json = json.dumps(args)
             CMD.append(args_json)
+# TODO: This should not be here, tool registry needs to be agnostic of secrets 
+            # Prepare environment with secrets from config
+            env = os.environ.copy()
+            if self.config.keys.brave:
+                env["BRAVE_SEARCH_API_KEY"] = self.config.keys.brave
 
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *CMD,
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env
                 )
                 stdout, stderr = await proc.communicate()
                 
@@ -394,20 +424,28 @@ class ToolRegistry:
         # Spells
         for name, data in self._spells.items():
             # Basic schema for spells
-            spell_schema = {
-                "name": name,
-                "description": data["description"],
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "instructions": {
-                             "type": "string",
-                             "description": "Optional instructions for the spell."
-                        }
-                    },
-                    "additionalProperties": True 
+            if data.get("parameters"):
+                 spell_schema = {
+                    "name": name,
+                    "description": data["description"],
+                    "parameters": data["parameters"]
                 }
-            }
+            else:
+                # Default fallback
+                spell_schema = {
+                    "name": name,
+                    "description": data["description"],
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "instructions": {
+                                "type": "string",
+                                "description": "Optional instructions for the spell."
+                            }
+                        },
+                        "additionalProperties": True 
+                    }
+                }
             schemas.append({
                 "type": "function",
                 "function": spell_schema
