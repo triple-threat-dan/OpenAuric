@@ -209,11 +209,26 @@
         let totalItems = 0;
 
         async function fetchLogs() {
+            const token = localStorage.getItem('auric_token');
+            if (!token) {
+                window.location.href = "/"; // Redirect to login
+                return;
+            }
+
             try {
                 const offset = currentPage * limit;
-                const response = await fetch(`${API_URL}?limit=${limit}&offset=${offset}`);
-                const data = await response.json();
+                const response = await fetch(`${API_URL}?limit=${limit}&offset=${offset}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
 
+                if (response.status === 401) {
+                    window.location.href = "/"; // Redirect to login
+                    return;
+                }
+
+                const data = await response.json();
                 totalItems = data.total;
                 renderTable(data.items);
                 updatePagination();

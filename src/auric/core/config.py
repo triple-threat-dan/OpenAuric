@@ -56,6 +56,7 @@ class GatewayConfig(BaseModel):
     """Configuration for the API gateway."""
     port: int = 8067
     host: str = "127.0.0.1"
+    web_ui_token: Optional[str] = None # Security Token for Web UI
 
 class SandboxConfig(BaseModel):
     """Configuration for the isolated Python sandbox."""

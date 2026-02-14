@@ -51,6 +51,18 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     """
     # 0. Load Configuration
     config = load_config()
+    
+    # Security: Ensure Web UI Token exists
+    if not config.gateway.web_ui_token:
+        import secrets
+        from auric.core.config import ConfigLoader
+        token = secrets.token_urlsafe(32)
+        config.gateway.web_ui_token = token
+        ConfigLoader.save(config)
+        logger.warning(f"Generated new Web UI Token: {token}")
+        console.print(f"[bold yellow]Generated new Web UI Token: {token}[/bold yellow]")
+        console.print("Use 'auric token' to retrieve it later.")
+
     logger.info(f"Starting Auric Daemon (PID {os.getpid()})...")
     
     # 0. Bootstrap Workspace

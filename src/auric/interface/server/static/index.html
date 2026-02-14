@@ -81,19 +81,104 @@
         </footer>
     </div>
 
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <h2>🔐 Authentication Required</h2>
+            <p>Please enter the Web UI Token from your console.</p>
+            <p class="hint">Run <code>auric token</code> to retrieve it.</p>
+            <input type="password" id="token-input" placeholder="Paste Token Here..." autocomplete="off">
+            <button id="login-btn">Unlock Access</button>
+            <p id="login-error" class="error-text"></p>
+        </div>
+    </div>
+
+    </div>
+
     <script>
         const API_URL = '/api';
         let activeSessionId = null; // null = Live, string = UUID
         let lastSessionListJSON = "";
+        let authToken = localStorage.getItem('auric_token');
+
+        // Auth Logic
+        const loginModal = document.getElementById('login-modal');
+        const tokenInput = document.getElementById('token-input');
+        const loginBtn = document.getElementById('login-btn');
+        const loginError = document.getElementById('login-error');
+
+        function showLogin() {
+            loginModal.style.display = 'flex';
+        }
+
+        function hideLogin() {
+            loginModal.style.display = 'none';
+        }
+
+        async function attemptLogin() {
+            const token = tokenInput.value.trim();
+            if (!token) return;
+
+            // Verify token by hitting status endpoint
+            try {
+                const response = await fetch(`${API_URL}/status`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    authToken = token;
+                    localStorage.setItem('auric_token', token);
+                    hideLogin();
+                    updateState(); // Start loop
+                } else {
+                    loginError.textContent = "Invalid Token";
+                }
+            } catch (e) {
+                loginError.textContent = "Connection Error";
+            }
+        }
+
+        loginBtn.addEventListener('click', attemptLogin);
+        tokenInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') attemptLogin();
+        });
+
+        // Wrapper for Fetch with Auth
+        async function fetchAuth(url, options = {}) {
+            if (!authToken) {
+                showLogin();
+                throw new Error("No Token");
+            }
+
+            const headers = options.headers || {};
+            headers['Authorization'] = `Bearer ${authToken}`;
+            options.headers = headers;
+
+            const response = await fetch(url, options);
+
+            if (response.status === 401) {
+                // Token invalid/expired
+                localStorage.removeItem('auric_token');
+                authToken = null;
+                showLogin();
+                throw new Error("Unauthorized");
+            }
+
+            return response;
+        }
 
         // Polling loop
         async function updateState() {
+            if (!authToken) {
+                showLogin();
+                return;
+            }
+
             try {
-                const response = await fetch(`${API_URL}/status`);
+                const response = await fetchAuth(`${API_URL}/status`);
                 if (!response.ok) throw new Error('Network response was not ok');
                 const data = await response.json();
 
-                renderFocus(data.focus_state);
                 renderFocus(data.focus_state);
 
                 // Only render live chat if we are in "Live" mode
@@ -110,11 +195,27 @@
                 document.getElementById('status-badge').textContent = "ONLINE";
                 document.getElementById('status-badge').classList.add('online');
             } catch (error) {
-                document.getElementById('status-badge').textContent = "OFFLINE";
-                document.getElementById('status-badge').classList.remove('online');
-                console.error('Fetch error:', error);
+                // If 401, fetchAuth handled it. Otherwise:
+                if (error.message !== "Unauthorized" && error.message !== "No Token") {
+                    document.getElementById('status-badge').textContent = "OFFLINE";
+                    document.getElementById('status-badge').classList.remove('online');
+                    console.error('Fetch error:', error);
+                }
             }
         }
+
+        // ... Render Functions Omitted (Unchanged) ...
+
+        // ... (We need to keep the render functions) ...
+        // I will use multi_replace to target specific blocks or replace the whole script section if simpler.
+        // Given complexity, let's just replace the top part of script and update fetch calls in other functions via logic below.
+
+        // Actually, replace_file_content replaces a block. I can replace the start of script and updateState
+        // and then I need to update other fetch calls to use fetchAuth.
+
+        // Let's do this sequentially or use multi_replace.
+        // multi_replace is better here.
+
 
         function renderFocus(focus) {
             const container = document.getElementById('focus-content');
@@ -243,8 +344,20 @@
             const message = input.value.trim();
             if (!message) return;
 
+            // 0. Slash Command Check
+            if (message.startsWith('/')) {
+                const handled = await handleCommand(message);
+                if (handled) {
+                    input.value = '';
+                    return;
+                }
+                // If not handled, we could either send it as text or warn.
+                // For now, let's treat unknown commands as text or warn.
+                // Let's send as text for flexibility unless it's a known command.
+            }
+
             try {
-                await fetch(`${API_URL}/chat`, {
+                await fetchAuth(`${API_URL}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message })
@@ -255,6 +368,21 @@
             }
         }
 
+        async function handleCommand(cmdString) {
+            const args = cmdString.split(' ');
+            const cmd = args[0].toLowerCase();
+
+            if (cmd === '/new') {
+                if (confirm("Start a new session?")) {
+                    await startNewSession(true); // Helper to reuse logic
+                }
+                return true;
+            }
+            // Add more commands here
+
+            return false;
+        }
+
         document.getElementById('send-btn').addEventListener('click', splitMessage);
         document.getElementById('chat-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') splitMessage();
@@ -263,7 +391,7 @@
         // Session Management
         async function fetchSessions() {
             try {
-                const response = await fetch(`${API_URL}/sessions`);
+                const response = await fetchAuth(`${API_URL}/sessions`);
                 if (!response.ok) return;
                 const sessions = await response.json();
 
@@ -308,7 +436,7 @@
             if (activeSessionId !== null) {
                 // Load history for that session
                 try {
-                    const response = await fetch(`${API_URL}/chat/${sessionId}`);
+                    const response = await fetchAuth(`${API_URL}/chat/${sessionId}`);
                     if (response.ok) {
                         const history = await response.json();
                         renderChat(history); // Render immediately
@@ -323,11 +451,11 @@
             }
         }
 
-        async function startNewSession() {
-            if (!confirm("Start a new session?")) return;
+        async function startNewSession(skipConfirm = false) {
+            if (!skipConfirm && !confirm("Start a new session?")) return;
 
             try {
-                await fetch(`${API_URL}/sessions/new`, { method: 'POST' });
+                await fetchAuth(`${API_URL}/sessions/new`, { method: 'POST' });
                 // Switch to live view
                 switchSession(null);
             } catch (e) {

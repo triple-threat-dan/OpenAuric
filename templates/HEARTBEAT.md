@@ -1,8 +1,19 @@
-# The Vigil (Heartbeat Checklist)
+# HEARTBEAT.md
 
-This list represents the rituals OpenAuric performs upon awakening or during idle cycles.
+> This document defines the recurring rituals and background maintenance tasks that the agent will perform whenever a **Heartbeat** event is triggered.
 
-- [ ] Check system health (CPU/Memory usage)
-- [ ] Scan `~/.auric/memories/` for new knowledge files to index
-<!-- - [ ] Check server status at localhost:8000 -->
-<!-- - [ ] Scan email for urgent messages from 'Boss' -->
+---
+
+<!--
+### 📋 Instructions for the User
+ List tasks below using standard Markdown checkboxes. The agent will read this file during its Dream Cycle or periodic wake-ups and attempt to fulfill any uncompleted tasks. 
+ -->
+
+### 📜 Ritual Checklist
+Add your daily, hourly, or periodic tasks below.
+<!--  
+  Example: 
+  - [ ] verify codebase integrity 
+  - [ ] prune expired memories
+  - [ ] Scan `~/.auric/memories/` for new knowledge files to index
+-->

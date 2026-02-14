@@ -79,6 +79,17 @@ class AuricDiscordClient(discord.Client):
                  # It is a DM, and user passed user-whitelist check.
                  pass
 
+        # 0. Command Interception (After Whitelist)
+        if message.content.strip() == "/new":
+             # Security Check: Must be in allowed_users (prevents random resets if bot is public)
+             if not self.pact.allowed_users or str(message.author.id) not in self.pact.allowed_users:
+                 await message.channel.send("⛔ You are not authorized to reset the session.")
+                 return
+
+             # Trigger new session
+             await self.pact.trigger_new_session(str(message.channel.id))
+             return
+
         # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
         should_respond = False
         
@@ -137,14 +148,34 @@ class AuricDiscordClient(discord.Client):
 
 
 class DiscordPact(BasePact):
-    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric"):
+    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric", api_port: int = 8000):
         super().__init__()
         self.token = token
         self.allowed_channels = allowed_channels
         self.allowed_users = allowed_users
         self.agent_name = agent_name
+        self.api_port = api_port
         self.client: Optional[AuricDiscordClient] = None
         self._task: Optional[asyncio.Task] = None
+
+    async def trigger_new_session(self, target_id: str) -> None:
+        """
+        Triggers a new session via the local API.
+        """
+        import aiohttp
+        try:
+            url = f"http://127.0.0.1:{self.api_port}/api/sessions/new"
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        new_sid = data.get("session_id")
+                        await self.send_message(target_id, f"🔄 **Session Reset**. New ID: `{new_sid}`")
+                    else:
+                        await self.send_message(target_id, f"⚠️ Failed to reset session. API Status: {resp.status}")
+        except Exception as e:
+            logger.error(f"Failed to trigger new session: {e}")
+            await self.send_message(target_id, f"⚠️ Error triggering new session: {e}")
 
     async def start(self) -> None:
         """
