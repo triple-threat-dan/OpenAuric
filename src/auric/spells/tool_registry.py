@@ -162,7 +162,7 @@ class ToolRegistry:
     @staticmethod
     def list_files(directory: str) -> str:
         """
-        List files and directories in the specified path.
+        List files and directories in the specified path.Supports `~` expansion.
 
         Args:
             directory: The directory path to list.
@@ -171,7 +171,7 @@ class ToolRegistry:
             A formatted string listing the contents, or an error message.
         """
         try:
-            path = Path(directory)
+            path = Path(directory).expanduser().resolve()
             if not path.exists():
                 return f"Error: Directory '{directory}' does not exist."
             if not path.is_dir():
@@ -197,7 +197,7 @@ class ToolRegistry:
     @staticmethod
     def read_file(path: str) -> str:
         """
-        Read the contents of a text file.
+        Read the contents of a text file. Supports `~` expansion.
 
         Args:
             path: The path to the file to read.
@@ -207,7 +207,7 @@ class ToolRegistry:
         """
         MAX_SIZE = 100 * 1024  # 100KB limit
         try:
-            file_path = Path(path)
+            file_path = Path(path).expanduser().resolve()
             if not file_path.exists():
                 return f"Error: File '{path}' does not exist."
             if not file_path.is_file():
@@ -226,7 +226,7 @@ class ToolRegistry:
     @staticmethod
     def write_file(path: str, content: str) -> str:
         """
-        Write content to a file. Overwrites existing content.
+        Write content to a file. Overwrites existing content. Supports `~` expansion.
 
         Args:
             path: The path to the file to write.
@@ -236,12 +236,12 @@ class ToolRegistry:
             Success message or error message.
         """
         try:
-            file_path = Path(path)
+            file_path = Path(path).expanduser().resolve()
             
             # Heuristic to fix common LLM double-escaping issue (e.g. for MEMORY.md)
             # If content is meant to be a markdown/text file but contains literal "\n" 
             # sequences without any actual newlines, we assume it was improperly escaped.
-            if path.lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
+            if str(file_path).lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
                  if "\\n" in content and "\n" not in content:
                       # Unescape literal backslash+n unless preceded by a backslash
                       # This handles the case where the LLM wrote "Line 1\nLine 2" as a single line

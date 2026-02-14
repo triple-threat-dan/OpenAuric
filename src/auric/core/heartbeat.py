@@ -7,6 +7,7 @@ of the "Dream Cycle" (maintenance/summarization) and "Vigil" (scheduled checks).
 
 import os
 import logging
+import asyncio
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -122,19 +123,21 @@ async def run_dream_cycle_task():
 # Vigil Logic
 # ==============================================================================
 
-async def run_vigil_task():
+async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
     """
-    APScheduler task for 'Vigil' checks.
+    APScheduler task for 'Heartbeat' checks (formerly Vigil).
     
-    Checks if active hours are valid and if heartbeat file exists.
+    Checks if active hours are valid.
+    If valid and HEARTBEAT.md exists, injects a system message into the command_bus
+    to wake up the agent.
     """
+    print(f"💓 Heartbeat Triggered: {datetime.now().strftime('%H:%M:%S')}")
+    logger.info("Heartbeat: Pulse triggered.")
+
     config = load_config()
     active_window = config.agents.defaults.heartbeat.active_hours
     
     # Simple active hours check 'HH:MM-HH:MM'
-    # For now we just parse it simply; a robust implementation might need dateutil or similar
-    # but let's stick to simple int comparison for simplicity unless library is available.
-    
     try:
         start_str, end_str = active_window.split('-')
         now = datetime.now()
@@ -147,13 +150,31 @@ async def run_vigil_task():
         end_minutes = end_h * 60 + end_m
         
         in_hours = False
-        if start_minutes <= end_minutes:
-            in_hours = start_minutes <= current_minutes <= end_minutes
-        else: # Crosses midnight
-            in_hours = current_minutes >= start_minutes or current_minutes <= end_minutes
+        start_ts = datetime.combine(now.date(), datetime.min.time()) + timedelta(minutes=start_minutes)
+        end_ts = datetime.combine(now.date(), datetime.min.time()) + timedelta(minutes=end_minutes)
+        
+        # Handle crossing midnight
+        if end_minutes < start_minutes:
+            end_ts += timedelta(days=1)
+            if now < start_ts and now < end_ts - timedelta(days=1): 
+                # Early morning before end time (e.g. 01:00 < 02:00)
+                pass 
+            elif now >= start_ts:
+                pass
+            else:
+                in_hours = False
+        else:
+             in_hours = start_minutes <= current_minutes <= end_minutes
             
+        # Check active window boolean
+        # Simplified logic:
+        if start_minutes <= end_minutes:
+             in_hours = start_minutes <= current_minutes <= end_minutes
+        else:
+             in_hours = current_minutes >= start_minutes or current_minutes <= end_minutes
+
         if not in_hours:
-            logger.debug(f"Heartbeat: Outside active hours ({active_window}). Vigil rests.")
+            logger.debug(f"Heartbeat: Outside active hours ({active_window}). Pulse skipped.")
             return
 
     except Exception as e:
@@ -162,20 +183,40 @@ async def run_vigil_task():
     # Check Heartbeat File
     heartbeat_file = AURIC_ROOT / "HEARTBEAT.md"
     
-    # Log persistent heartbeat (Vigil Pulse)
-    # We need to get the audit logger instance. 
-    # Since run_vigil_task is static/function based, we instantiate a temp one or access via Manager if passed.
-    # For efficiency, let's just use the HeartbeatManager's logger if available (it refers to a singleton mostly).
+    # Log persistent heartbeat
     hb = HeartbeatManager.get_instance()
     if hb.audit_logger:
-        await hb.audit_logger.log_heartbeat(status="VIGIL", meta={
+        await hb.audit_logger.log_heartbeat(status="PULSE", meta={
             "active_window": active_window, 
             "in_hours": True,
             "has_heartbeat_file": heartbeat_file.exists()
         })
 
     if heartbeat_file.exists():
-         logger.info("Heartbeat: Checking vigil... (HEARTBEAT.md detected)")
-         # Placeholder for actual vigil logic (Epic 5)
+         content = heartbeat_file.read_text(encoding="utf-8")
+         if "[ ]" in content:
+             logger.info("Heartbeat: Pending tasks detected in HEARTBEAT.md. Waking agent...")
+             if command_bus:
+                 # Provide absolute path to help agent find the file
+                 heartbeat_path_str = str(heartbeat_file.resolve())
+                 
+                 prompt = (
+                     "🔴 **SYSTEM HEARTBEAT TRIGGERED**\n\n"
+                     f"The system heartbeat has activated. Please review your `HEARTBEAT.md` checklist below (located at `{heartbeat_path_str}`) and perform any pending tasks.\n\n"
+                     f"```markdown\n{content}\n```"
+                 )
+                 try:
+                     await command_bus.put({
+                         "level": "USER",
+                         "message": prompt,
+                         "source": "HEARTBEAT",
+                         "session_id": "heartbeat-vigil"
+                     })
+                 except Exception as ex:
+                     logger.error(f"Heartbeat Bus Error: {ex}")
+             else:
+                 logger.warning("Heartbeat: No command_bus connection!")
+         else:
+             logger.debug("Heartbeat: No pending tasks in HEARTBEAT.md.")
     else:
-        logger.debug("Heartbeat: No HEARTBEAT.md found. Vigil holds.")
+        logger.debug("Heartbeat: No HEARTBEAT.md found.")

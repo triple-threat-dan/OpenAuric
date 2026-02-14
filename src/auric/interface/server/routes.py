@@ -170,6 +170,11 @@ async def new_session(request: Request):
     if chat_history is not None:
         chat_history.clear()
         
+    # 4. Clear Focus (New Session = Fresh Context)
+    focus_manager = getattr(request.app.state, "focus_manager", None)
+    if focus_manager:
+        focus_manager.clear()
+
     return {"status": "New session started", "session_id": new_id, "previous_session_id": old_id}
 
 @router.post("/api/sessions/{session_id}/rename")
