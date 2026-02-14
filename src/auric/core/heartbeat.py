@@ -193,30 +193,30 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
         })
 
     if heartbeat_file.exists():
-         content = heartbeat_file.read_text(encoding="utf-8")
-         if "[ ]" in content:
-             logger.info("Heartbeat: Pending tasks detected in HEARTBEAT.md. Waking agent...")
-             if command_bus:
-                 # Provide absolute path to help agent find the file
-                 heartbeat_path_str = str(heartbeat_file.resolve())
-                 
-                 prompt = (
-                     "🔴 **SYSTEM HEARTBEAT TRIGGERED**\n\n"
-                     f"The system heartbeat has activated. Please review your `HEARTBEAT.md` checklist below (located at `{heartbeat_path_str}`) and perform any pending tasks.\n\n"
-                     f"```markdown\n{content}\n```"
-                 )
-                 try:
-                     await command_bus.put({
-                         "level": "USER",
-                         "message": prompt,
-                         "source": "HEARTBEAT",
-                         "session_id": "heartbeat-vigil"
-                     })
-                 except Exception as ex:
-                     logger.error(f"Heartbeat Bus Error: {ex}")
-             else:
-                 logger.warning("Heartbeat: No command_bus connection!")
-         else:
-             logger.debug("Heartbeat: No pending tasks in HEARTBEAT.md.")
+        content = heartbeat_file.read_text(encoding="utf-8")
+        if "- " in content:
+            logger.info("Heartbeat: Pending tasks detected in HEARTBEAT.md. Waking agent...")
+            if command_bus:
+                # Provide absolute path to help agent find the file
+                heartbeat_path_str = str(heartbeat_file.resolve())
+                
+                prompt = (
+                    "🔴 **SYSTEM HEARTBEAT TRIGGERED**\n\n"
+                    f"The system heartbeat has activated. Please review your `HEARTBEAT.md` checklist below (located at `{heartbeat_path_str}`) and perform any pending tasks.\n\n"
+                    f"```markdown\n{content}\n```"
+                )
+                try:
+                    await command_bus.put({
+                        "level": "USER",
+                        "message": prompt,
+                        "source": "HEARTBEAT",
+                        "session_id": "heartbeat-vigil"
+                    })
+                except Exception as ex:
+                    logger.error(f"Heartbeat Bus Error: {ex}")
+            else:
+                logger.warning("Heartbeat: No command_bus connection!")
+        else:
+            logger.debug("Heartbeat: No pending tasks found in HEARTBEAT.md.")
     else:
         logger.debug("Heartbeat: No HEARTBEAT.md found.")

@@ -167,6 +167,15 @@ class PactManager:
                 definitions.append(defs)
         return "\n\n".join(definitions)
 
+    def get_tools_schema(self) -> List[Dict[str, Any]]:
+        """
+        Aggregates JSON schemas from all enabled pacts.
+        """
+        schemas = []
+        for name, adapter in self.adapters.items():
+            schemas.extend(adapter.get_tools_schema())
+        return schemas
+
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         # Linear search for now, could optimize with a map
         for name, adapter in self.adapters.items():

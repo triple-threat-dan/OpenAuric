@@ -26,6 +26,9 @@ app.add_typer(dashboard_app, name="dashboard")
 app.add_typer(config_app, name="config")
 app.add_typer(spells_app, name="spells")
 
+pairing_app = typer.Typer(help="Manage Device/User Pairing")
+app.add_typer(pairing_app, name="pairing")
+
 console = Console()
 
 PID_FILE = AURIC_ROOT / "auric.pid"
@@ -502,6 +505,57 @@ def config_unset(key: str):
             
     except Exception:
         console.print(f"[red]Path '{key}' invalid.[/red]")
+
+# --- Pairing Commands ---
+
+@pairing_app.command("list")
+def pairing_list(pact: str = typer.Argument(..., help="The pact name (e.g., discord)")):
+    """List pending pairing requests."""
+    from auric.core.pairing import PairingManager
+    
+    try:
+        mgr = PairingManager()
+        requests = mgr.list_requests(pact)
+        
+        if not requests:
+            console.print(f"[yellow]No pending requests for {pact}.[/yellow]")
+            return
+            
+        console.print(f"[bold green]Pending Requests for {pact}:[/bold green]")
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Shortcode")
+        table.add_column("User Name")
+        table.add_column("User ID")
+        table.add_column("Time")
+        
+        for code, data in requests.items():
+            table.add_row(code, data["user_name"], data["user_id"], data["timestamp"])
+            
+        console.print(table)
+        
+    except Exception as e:
+        console.print(f"[red]Error listing requests: {e}[/red]")
+
+@pairing_app.command("approve")
+def pairing_approve(
+    pact: str = typer.Argument(..., help="The pact name (e.g., discord)"),
+    shortcode: str = typer.Argument(..., help="The pairing shortcode")
+):
+    """Approve a pairing request."""
+    from auric.core.pairing import PairingManager
+    
+    try:
+        mgr = PairingManager()
+        user_name = mgr.approve_request(pact, shortcode)
+        
+        if user_name:
+            console.print(f"[bold green]Successfully approved {user_name} for {pact}.[/bold green]")
+            console.print(f"They can now interact with the agent.")
+        else:
+            console.print(f"[red]Invalid code '{shortcode}' or request expired.[/red]")
+            
+    except Exception as e:
+        console.print(f"[red]Error approving request: {e}[/red]")
 
 if __name__ == "__main__":
     app()

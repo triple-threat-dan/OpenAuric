@@ -78,6 +78,12 @@ class BasePact(ABC):
         """
         return []
 
+    def get_tools_schema(self) -> list[Dict[str, Any]]:
+        """
+        Returns a list of JSON schemas for the tools provided by this pact.
+        """
+        return []
+
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         """
         Executes a tool if this pact owns it.

@@ -330,7 +330,10 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          # Message from Pact (Discord/Telegram)
                          event = item.get("event")
                          if event:
-                             user_msg = event.content
+                             # Prepend User Identity
+                             sender_name = event.metadata.get("author_display") or event.metadata.get("author_name") or "User"
+                             user_msg = f"{sender_name}: {event.content}"
+                             
                              source = "PACT"
                              platform = event.platform
                              sender_id = event.sender_id
