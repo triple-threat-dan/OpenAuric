@@ -7,12 +7,14 @@ standard library tools (filesystem operations) and external MCP servers.
 """
 
 import logging
+import os
 import json
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Any, Callable, Optional, Union
 import inspect
 import subprocess
+import re
 
 from auric.core.config import AuricConfig, AURIC_ROOT
 from auric.spells.sandbox import SandboxManager
@@ -87,12 +89,35 @@ class ToolRegistry:
                         name = meta["name"]
                         instructions = content[end_frontmatter+3:].strip()
                         
+                        # Parse parameters if available (using a simple YAML-like parser for the dict structure)
+                        # Since we don't have PyYAML, we'll need to rely on the user providing valid JSON-like structure 
+                        # or simple key-value pairs if we want to avoid complex parsing.
+                        # Wait, the meta logic above only handles simple key:value lines.
+                        # Let's import yaml if available, or just fallback to the hardcoded default for now
+                        # but ideally we should parse the 'parameters' block.
+                        
+                        # Actually, better yet, let's just use json.loads if the user provides parameters as a JSON string in a specific field?
+                        # Or, since we want to support this properly, let's assume we can add PyYAML to dependencies later.
+                        # For now, let's look for a hacky way or just use a `parameters_json` field in frontmatter for safety.
+                        
+                        # Pivot: As I cannot easily add PyYAML dependency right now without user permission/restart.
+                        # I will modify the `SKILL.md` to use a `parameters_json` field which I can parse with json.loads.
+                        # This is robust and doesn't require new deps.
+                        
+                        parameters = {}
+                        if "parameters_json" in meta:
+                            try:
+                                parameters = json.loads(meta["parameters_json"])
+                            except json.JSONDecodeError:
+                                logger.error(f"Failed to parse parameters_json for {name}")
+
                         spell_data = {
                             "name": name,
                             "description": meta.get("description", "No description"),
                             "path": path.parent,
                             "instructions": instructions,
-                            "script": self._find_script(path.parent)
+                            "script": self._find_script(path.parent),
+                            "parameters": parameters
                         }
                         self._spells[name] = spell_data
                         logger.debug(f"Loaded spell: {name}")
@@ -137,7 +162,7 @@ class ToolRegistry:
     @staticmethod
     def list_files(directory: str) -> str:
         """
-        List files and directories in the specified path.
+        List files and directories in the specified path.Supports `~` expansion.
 
         Args:
             directory: The directory path to list.
@@ -146,7 +171,7 @@ class ToolRegistry:
             A formatted string listing the contents, or an error message.
         """
         try:
-            path = Path(directory)
+            path = Path(directory).expanduser().resolve()
             if not path.exists():
                 return f"Error: Directory '{directory}' does not exist."
             if not path.is_dir():
@@ -172,7 +197,7 @@ class ToolRegistry:
     @staticmethod
     def read_file(path: str) -> str:
         """
-        Read the contents of a text file.
+        Read the contents of a text file. Supports `~` expansion.
 
         Args:
             path: The path to the file to read.
@@ -182,7 +207,7 @@ class ToolRegistry:
         """
         MAX_SIZE = 100 * 1024  # 100KB limit
         try:
-            file_path = Path(path)
+            file_path = Path(path).expanduser().resolve()
             if not file_path.exists():
                 return f"Error: File '{path}' does not exist."
             if not file_path.is_file():
@@ -201,7 +226,7 @@ class ToolRegistry:
     @staticmethod
     def write_file(path: str, content: str) -> str:
         """
-        Write content to a file. Overwrites existing content.
+        Write content to a file. Overwrites existing content. Supports `~` expansion.
 
         Args:
             path: The path to the file to write.
@@ -211,7 +236,19 @@ class ToolRegistry:
             Success message or error message.
         """
         try:
-            file_path = Path(path)
+            file_path = Path(path).expanduser().resolve()
+            
+            # Heuristic to fix common LLM double-escaping issue (e.g. for MEMORY.md)
+            # If content is meant to be a markdown/text file but contains literal "\n" 
+            # sequences without any actual newlines, we assume it was improperly escaped.
+            if str(file_path).lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
+                 if "\\n" in content and "\n" not in content:
+                      # Unescape literal backslash+n unless preceded by a backslash
+                      # This handles the case where the LLM wrote "Line 1\nLine 2" as a single line
+                      # but preserves "Line 1\\nLine 2" (literal \n).
+                      content = re.sub(r'(?<!\\)\\n', '\n', content)
+                      logger.info(f"Automatically unescaped content for {path}")
+
             # Ensure parent directory exists
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -330,12 +367,18 @@ class ToolRegistry:
             import json
             args_json = json.dumps(args)
             CMD.append(args_json)
+# TODO: This should not be here, tool registry needs to be agnostic of secrets 
+            # Prepare environment with secrets from config
+            env = os.environ.copy()
+            if self.config.keys.brave:
+                env["BRAVE_SEARCH_API_KEY"] = self.config.keys.brave
 
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *CMD,
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env
                 )
                 stdout, stderr = await proc.communicate()
                 
@@ -381,20 +424,28 @@ class ToolRegistry:
         # Spells
         for name, data in self._spells.items():
             # Basic schema for spells
-            spell_schema = {
-                "name": name,
-                "description": data["description"],
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "instructions": {
-                             "type": "string",
-                             "description": "Optional instructions for the spell."
-                        }
-                    },
-                    "additionalProperties": True 
+            if data.get("parameters"):
+                 spell_schema = {
+                    "name": name,
+                    "description": data["description"],
+                    "parameters": data["parameters"]
                 }
-            }
+            else:
+                # Default fallback
+                spell_schema = {
+                    "name": name,
+                    "description": data["description"],
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "instructions": {
+                                "type": "string",
+                                "description": "Optional instructions for the spell."
+                            }
+                        },
+                        "additionalProperties": True 
+                    }
+                }
             schemas.append({
                 "type": "function",
                 "function": spell_schema

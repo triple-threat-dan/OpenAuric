@@ -152,15 +152,39 @@ class RLMEngine:
         if self.tool_registry:
             tools_schemas.extend(self.tool_registry.get_tools_schema())
         
-        # Add spawn_sub_agent manually if not in registry (it is handled internally for now)
-        # We model it as a tool if we want the LLM to call it natively.
-        # But for now, let's just stick to registry tools + Pact tools if possible.
+        # Inject Pact Tools
+        if self.pact_manager:
+            tools_schemas.extend(self.pact_manager.get_tools_schema())
+        
+        # Add spawn_sub_agent manually
+        tools_schemas.append({
+            "type": "function",
+            "function": {
+                "name": "spawn_sub_agent",
+                "description": "Delegates a complex sub-task to a recursive sub-agent. The sub-agent has its own context and tools. Use this to break down large tasks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instruction": {
+                            "type": "string",
+                            "description": "The specific instruction for the sub-agent to execute."
+                        }
+                    },
+                    "required": ["instruction"]
+                }
+            }
+        })
         
         # If no tools, pass None
         tools_arg = tools_schemas if tools_schemas else None
 
         while current_turn < max_turns:
             current_turn += 1
+            
+            # Dynamic Context Refresh: Re-assemble system prompt to capture state changes (e.g. FOCUS.md edits)
+            # This allows the agent to "see" its own writes without needing to read the file back.
+            system_prompt = self._assemble_system_prompt(task_context)
+            messages[0]["content"] = system_prompt
             
             try:
                 response = await self.gateway.chat_completion(
@@ -256,6 +280,17 @@ class RLMEngine:
                     except Exception as e:
                         logger.error(f"Failed to execute {fn_name}: {e}")
                         result_content = f"Error executing {fn_name}: {e}"
+
+                # Log Tool Result to CLI/Bus
+                if hasattr(self, "log_callback") and self.log_callback:
+                    # Truncate long results for display
+                    display_result = result_content[:500] + "..." if len(result_content) > 500 else result_content
+                    log_msg = f"Result from {fn_name}: {display_result}"
+                    
+                    if inspect.iscoroutinefunction(self.log_callback):
+                        await self.log_callback("TOOL", log_msg) # Reuse TOOL level for now
+                    else:
+                        self.log_callback("TOOL", log_msg)
 
                 # Append Tool Result to messages
                 if is_fallback:

@@ -39,7 +39,8 @@ class PactManager:
                 token=self.config.pacts.discord.token,
                 allowed_channels=self.config.pacts.discord.allowed_channels,
                 allowed_users=self.config.pacts.discord.allowed_users,
-                agent_name=self.config.agents.name
+                agent_name=self.config.agents.name,
+                api_port=self.config.gateway.port
             )
             discord.on_message(self.handle_message)
             self.adapters["discord"] = discord
@@ -165,6 +166,15 @@ class PactManager:
             if defs:
                 definitions.append(defs)
         return "\n\n".join(definitions)
+
+    def get_tools_schema(self) -> List[Dict[str, Any]]:
+        """
+        Aggregates JSON schemas from all enabled pacts.
+        """
+        schemas = []
+        for name, adapter in self.adapters.items():
+            schemas.extend(adapter.get_tools_schema())
+        return schemas
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         # Linear search for now, could optimize with a map

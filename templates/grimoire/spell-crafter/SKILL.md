@@ -115,6 +115,8 @@ Implement `scripts/`, `references/`, `assets/`. Test scripts. Delete unused exam
 * `name`: Skill name.
 * `description`: **Single-line string.** Primary trigger. Include "what" it does and "when" to use it.
 * *Example:* `description: Data ingestion for tabular data. Use for CSV/TSV analysis and schema normalization.`
+* `parameters_json`: **Optional JSON string.** Defines the tool parameters schema (OpenAI function format).
+* *Example:* `parameters_json: {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}`
 
 
 * **Body:** Imperative instructions.

@@ -438,3 +438,93 @@ button:hover {
     display: flex;
     justify-content: space-between;
 }
+
+/* Login Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(5px);
+}
+
+.modal-content {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--accent-color);
+    padding: 40px;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 450px;
+    text-align: center;
+    box-shadow: 0 0 30px rgba(10, 189, 199, 0.15);
+    position: relative;
+}
+
+.modal-content h2 {
+    color: var(--accent-color);
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.modal-content p {
+    color: var(--text-color);
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+.modal-content .hint {
+    color: var(--muted-text);
+    font-size: 0.9rem;
+    margin-bottom: 25px;
+}
+
+.modal-content code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--gold);
+    font-family: var(--font-mono);
+}
+
+.modal-content input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 12px;
+    font-family: var(--font-mono);
+}
+
+.modal-content input:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 10px rgba(10, 189, 199, 0.2);
+    outline: none;
+}
+
+.modal-content button {
+    width: 100%;
+    padding: 12px;
+    font-size: 1rem;
+    margin-bottom: 15px;
+}
+
+.error-text {
+    color: var(--error-color);
+    font-size: 0.9rem;
+    min-height: 1.2em;
+    font-weight: bold;
+}

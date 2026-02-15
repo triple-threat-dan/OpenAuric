@@ -24,7 +24,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .config import load_config
+from .config import load_config, AURIC_ROOT
 from .database import AuditLogger
 # from auric.interface.tui.app import AuricTUI # TUI Disabled
 from auric.interface.server.routes import router as dashboard_router
@@ -51,6 +51,18 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     """
     # 0. Load Configuration
     config = load_config()
+    
+    # Security: Ensure Web UI Token exists
+    if not config.gateway.web_ui_token:
+        import secrets
+        from auric.core.config import ConfigLoader
+        token = secrets.token_urlsafe(32)
+        config.gateway.web_ui_token = token
+        ConfigLoader.save(config)
+        logger.warning(f"Generated new Web UI Token: {token}")
+        console.print(f"[bold yellow]Generated new Web UI Token: {token}[/bold yellow]")
+        console.print("Use 'auric token' to retrieve it later.")
+
     logger.info(f"Starting Auric Daemon (PID {os.getpid()})...")
     
     # 0. Bootstrap Workspace
@@ -106,16 +118,9 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     api_app.mount("/", StaticFiles(directory=str(static_path), html=True), name="static")
 
     # 2. Setup Scheduler (Heartbeat & Dream Cycle)
+    # 2. Setup Scheduler (Heartbeat & Dream Cycle)
     scheduler = AsyncIOScheduler()
     
-    # Placeholder: Add heartbeat job if configured
-    if config.agents.defaults.heartbeat.enabled:
-        # scheduler.add_job(heartbeat_task, 'interval', minutes=30) 
-        pass
-
-    scheduler.start()
-    logger.info("Scheduler started.")
-
     # 3. Setup Database & Audit Logger
     audit_logger = AuditLogger()
     await audit_logger.init_db()
@@ -131,10 +136,34 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
         api_app.state.current_session_id = new_sid
         logger.info(f"Starting new session: {new_sid}")
 
-    # 2.1 Initialize HeartbeatManager with Logger
-    from auric.core.heartbeat import HeartbeatManager
+    # 2.1 Initialize HeartbeatManager with Logger (Singleton)
+    from auric.core.heartbeat import HeartbeatManager, run_heartbeat_task
     # Singleton Init
     HeartbeatManager(audit_logger)
+
+    # 2.2 Schedule Heartbeat
+    if config.agents.defaults.heartbeat.enabled:
+        interval_str = config.agents.defaults.heartbeat.interval
+        kwargs = {}
+        try:
+            if interval_str.endswith("m"):
+                 kwargs["minutes"] = int(interval_str[:-1])
+            elif interval_str.endswith("h"):
+                 kwargs["hours"] = int(interval_str[:-1])
+            elif interval_str.endswith("s"):
+                 kwargs["seconds"] = int(interval_str[:-1])
+            else:
+                 logger.warning(f"Invalid heartbeat interval '{interval_str}', defaulting to 30m")
+                 kwargs["minutes"] = 30
+        except ValueError:
+             logger.warning(f"Could not parse heartbeat interval '{interval_str}', defaulting to 30m")
+             kwargs["minutes"] = 30
+             
+        scheduler.add_job(run_heartbeat_task, 'interval', args=[command_bus], **kwargs)
+        logger.info(f"Heartbeat scheduled every {interval_str}.")
+
+    scheduler.start()
+    logger.info("Scheduler started.")
 
     # 3.1 Setup Pact Manager (Omni-Channel)
     from auric.interface.pact_manager import PactManager
@@ -187,13 +216,19 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     librarian = GrimoireLibrarian()
     librarian.start()
     
-    focus_path = Path("~/.auric/grimoire/FOCUS.md").expanduser()
+    focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
     tool_registry = ToolRegistry(config)
     
     # Inject into API state and add reload endpoint
     api_app.state.tool_registry = tool_registry
+    api_app.state.focus_manager = focus_manager
+
+    # If we started a NEW session (fresh install or no DB), clear focus
+    if not last_session_id:
+         logger.info("Fresh session detected. Clearing Focus.")
+         focus_manager.clear()
     
 
 
@@ -236,7 +271,10 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      elif level == "USER": color = "blue"
                      elif level == "TOOL": color = "magenta"
                      
-                     console.print(f"[{timestamp}] [{level}] {text}", style=color)
+                     from rich.text import Text
+                     text_obj = Text(f"[{timestamp}] [{level}] {text}")
+                     text_obj.stylize(color)
+                     console.print(text_obj)
                 else:
                     console.print(str(msg))
                 
@@ -265,6 +303,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                print(f"Dispatcher Critical Error: {e}")
                 logger.error(f"Dispatcher Error: {e}")
 
     async def brain_loop():
@@ -273,6 +312,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
             try:
                 # Wait for command
                 item = await command_bus.get()
+                print(f"🧠 Brain: Received item: {item.keys() if isinstance(item, dict) else item}")
                 
                 # Identify Message Source
                 user_msg = None
@@ -283,14 +323,17 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                 
                 if isinstance(item, dict):
                     if item.get("level") == "USER":
-                         # Message from Web UI
+                         # Message from Web UI or Heartbeat
                          user_msg = item.get("message")
-                         source = "WEB"
+                         source = item.get("source", "WEB") # Respect source
                     elif item.get("type") == "user_query":
                          # Message from Pact (Discord/Telegram)
                          event = item.get("event")
                          if event:
-                             user_msg = event.content
+                             # Prepend User Identity
+                             sender_name = event.metadata.get("author_display") or event.metadata.get("author_name") or "User"
+                             user_msg = f"{sender_name}: {event.content}"
+                             
                              source = "PACT"
                              platform = event.platform
                              sender_id = event.sender_id
@@ -319,7 +362,6 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      })
                      
                      logger.info(f"Thinking on: {user_msg}")
-                     logger.info(f"Thinking on: {user_msg}")
                      # Process with Engine
                      try:
                          # Extract session_id if available (from WEB) or use the one we injected
@@ -332,12 +374,13 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          response = await rlm_engine.think(user_msg, session_id=session_id)
                          
                          # Reply to Source
-                         if source == "WEB":
-                             await internal_bus.put({
-                                 "level": "AGENT",
-                                 "message": response,
-                                 "source": "BRAIN"
-                             })
+                         if source in ["WEB", "HEARTBEAT"]: # Handle HEARTBEAT same as WEB for now logic-wise
+                              await internal_bus.put({
+                                  "level": "AGENT",
+                                  "message": response,
+                                  "source": "BRAIN",
+                                  "session_id": session_id
+                              })
                          elif source == "PACT":
                              adapter = pact_manager.adapters.get(platform)
                              if adapter and response:

@@ -314,3 +314,12 @@ class AuditLogger:
             statement = select(ChatMessage.session_id).order_by(ChatMessage.timestamp.desc()).limit(1)
             result = await session.exec(statement)
             return result.one_or_none()
+
+    async def stub_summarize_session(self, session_id: str) -> None:
+        """
+        Stub: Summarizes the last 15 messages of the session and stores it in long-term memory.
+        """
+        # logger is not global here, need to import or print. logic is inside AuditLogger.
+        # print(f"STUB: Summarizing session {session_id} (No-op)")
+        # Better to just pass.
+        pass

@@ -1,3 +1,4 @@
+import re
 import asyncio
 import logging
 from typing import Optional, List, Dict, Any
@@ -23,61 +24,61 @@ class AuricDiscordClient(discord.Client):
         if message.author == self.user:
             return
 
-        # Whitelist Checks
-        # 1. User Whitelist (if strictly enforced, or if we want to ignore bots/strangers)
-        # Note: If allowed_users is empty, we might allow all (per config policy), 
-        # but the requirement says "if ... isn't whitelisted ... ignore it".
-        # So effective policy is: Deny All unless in whitelist.
-        # However, for channels, if allowed_channels is empty, maybe we allow DMs?
-        # Let's implementation strict whitelist if lists are provided.
+        # Whitelist Checks / Pairing Authentication
+        from auric.core.pairing import PairingManager
+        pairing_mgr = PairingManager()
         
-        is_allowed_user = False
-        if not self.pact.allowed_users:
-            is_allowed_user = True # No whitelist = Allow all users? Or Deny all? 
-            # Requirement: "if a message... isn't whitelisted... ignore it" implies strict whitelist.
-            # But usually if config is empty, people assume it works for everyone or no one.
-            # Let's assume emptiness means "Open to all" to avoid confusion, OR "Closed to all".
-            # Given it's a "Pact", usually explicit consent.
-            # I will implement: If whitelist is present, enforce it. If empty, allow all (or maybe just log warning).
-            # Actually, looking at requirement 5: "if a message/reaction from a user or channel that isn't whitelisted is received by a pact, it should ignore it"
-            # This implies validation is mandatory.
-            pass
-        else:
-            if str(message.author.id) in self.pact.allowed_users:
-                is_allowed_user = True
+        user_id = str(message.author.id)
         
-        is_allowed_channel = False
-        if not self.pact.allowed_channels:
-            # If no channels whitelisted, maybe allow DMs?
+        # Check Authorization
+        if not pairing_mgr.is_user_allowed("discord", user_id, self.pact.allowed_users):
+            # Log specific exclusion
+            logger.warning(f"Unauthorized message from {message.author.name} ({user_id})")
+            
+            # Generate Pairing Request
+            code = pairing_mgr.create_request("discord", user_id, message.author.name)
+            
+            # Reply with Instructions (only if it's a DM or they mentioned us, to avoid spamming public channels)
+            # Actually, to be safe, we should probably reply to the channel if they tried to talk to us.
+            # But if they are just chatting in a channel we are in, we shouldn't interrupt unless mentioned.
+            
+            should_warn = False
             if isinstance(message.channel, discord.DMChannel):
-                is_allowed_channel = True
-            else:
-                is_allowed_channel = True # Or False? Let's assume empty list = allow none for channels to be safe.
-        else:
-            if str(message.channel.id) in self.pact.allowed_channels:
-                is_allowed_channel = True
-        
-        # Enforce Logic:
-        # If allowed_users is set, must match.
-        # If allowed_channels is set, must match.
-        # If both are empty, we probably shouldn't accept anything to save tokens, OR accept everything.
-        # I'll implement: 
-        # - If allowed_users defined: Enforce. Else: Allow.
-        # - If allowed_channels defined: Enforce. Else: Allow.
-        
-        if self.pact.allowed_users and str(message.author.id) not in self.pact.allowed_users:
-            logger.debug(f"Ignored message from unauthorized user {message.author.name} ({message.author.id})")
+                should_warn = True
+            elif self.user in message.mentions:
+                should_warn = True
+            elif self.pact.agent_name.lower() in message.content.lower():
+                should_warn = True
+                
+            if should_warn:
+                try:
+                    await message.channel.send(
+                        f"⛔ **Unauthorized Identity**\n"
+                        f"You are not authorized to interact with me.\n"
+                        f"Please ask the administrator to approve this pairing code:\n"
+                        f"# `{code}`"
+                    )
+                except Exception as e:
+                     logger.error(f"Failed to send auth warning: {e}")
+            
             return
 
+        # Channel Whitelist (Legacy/Optional - still enforced if configured)
         if self.pact.allowed_channels and str(message.channel.id) not in self.pact.allowed_channels:
-             # Exception: DMs might not have a channel ID in the whitelist usually, or they do?
-             # User might whitelist a DM channel ID.
-             # If it's a DM, we usually check user whitelist primarily.
              if not isinstance(message.channel, discord.DMChannel):
-                 logger.debug(f"Ignored message from unauthorized channel {message.channel.id}")
+                 # logger.debug(f"Ignored message from unauthorized channel {message.channel.id}")
                  return
-                 # It is a DM, and user passed user-whitelist check.
-                 pass
+
+        # 0. Command Interception (After Whitelist)
+        if message.content.strip() == "/new":
+             # Security Check: Must be in allowed_users (prevents random resets if bot is public)
+             if not self.pact.allowed_users or str(message.author.id) not in self.pact.allowed_users:
+                 await message.channel.send("⛔ You are not authorized to reset the session.")
+                 return
+
+             # Trigger new session
+             await self.pact.trigger_new_session(str(message.channel.id))
+             return
 
         # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
         should_respond = False
@@ -114,11 +115,28 @@ class AuricDiscordClient(discord.Client):
             # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
             return
 
+        # Parse Mentions and Clean Content
+        clean_content = message.content
+        
+        # Replace User Mentions <@ID> or <@!ID>
+        if message.mentions:
+            for user in message.mentions:
+                # Use display_name (nickname) if available, else name
+                display_name = user.display_name if hasattr(user, "display_name") else user.name
+                
+                # Regex handles both <@ID> and <@!ID>
+                clean_content = re.sub(f"<@!?{user.id}>", f"@{display_name}", clean_content)
+        
+        # Replace Channel Mentions <#ID>
+        if message.channel_mentions:
+            for channel in message.channel_mentions:
+                 clean_content = clean_content.replace(f"<#{channel.id}>", f"#{channel.name}")
+
         # Normalize to PactEvent
         event = PactEvent(
             platform="discord",
             sender_id=str(message.channel.id), # We reply to the channel, not the user (unless DM)
-            content=message.content,
+            content=clean_content,
             timestamp=message.created_at,
             metadata={
                 "channel_id": str(message.channel.id),
@@ -137,14 +155,34 @@ class AuricDiscordClient(discord.Client):
 
 
 class DiscordPact(BasePact):
-    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric"):
+    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric", api_port: int = 8000):
         super().__init__()
         self.token = token
         self.allowed_channels = allowed_channels
         self.allowed_users = allowed_users
         self.agent_name = agent_name
+        self.api_port = api_port
         self.client: Optional[AuricDiscordClient] = None
         self._task: Optional[asyncio.Task] = None
+
+    async def trigger_new_session(self, target_id: str) -> None:
+        """
+        Triggers a new session via the local API.
+        """
+        import aiohttp
+        try:
+            url = f"http://127.0.0.1:{self.api_port}/api/sessions/new"
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        new_sid = data.get("session_id")
+                        await self.send_message(target_id, f"🔄 **Session Reset**. New ID: `{new_sid}`")
+                    else:
+                        await self.send_message(target_id, f"⚠️ Failed to reset session. API Status: {resp.status}")
+        except Exception as e:
+            logger.error(f"Failed to trigger new session: {e}")
+            await self.send_message(target_id, f"⚠️ Error triggering new session: {e}")
 
     async def start(self) -> None:
         """
@@ -329,6 +367,77 @@ class DiscordPact(BasePact):
             "discord_send_dm", 
             "discord_send_channel_message", 
             "discord_add_reaction"
+        ]
+
+    def get_tools_schema(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "discord_send_channel_message",
+                    "description": "Send a message to a specific Discord channel.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "channel_id": {
+                                "type": "string",
+                                "description": "The ID of the Discord channel to send the message to."
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "The content of the message to send."
+                            }
+                        },
+                        "required": ["channel_id", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "discord_send_dm",
+                    "description": "Send a Direct Message (DM) to a specific Discord user.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "user_id": {
+                                "type": "string",
+                                "description": "The ID of the Discord user to message."
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "The content of the DM."
+                            }
+                        },
+                        "required": ["user_id", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "discord_add_reaction",
+                    "description": "Add an emoji reaction to a specific message.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "channel_id": {
+                                "type": "string",
+                                "description": "The ID of the channel containing the message."
+                            },
+                            "message_id": {
+                                "type": "string",
+                                "description": "The ID of the message to react to."
+                            },
+                            "emoji": {
+                                "type": "string",
+                                "description": "The emoji to add (unicode or custom ID)."
+                            }
+                        },
+                        "required": ["channel_id", "message_id", "emoji"]
+                    }
+                }
+            }
         ]
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:

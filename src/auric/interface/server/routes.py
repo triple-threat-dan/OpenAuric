@@ -6,14 +6,15 @@ from typing import Dict, Any, List
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from auric.core.config import AURIC_WORKSPACE_DIR, AURIC_ROOT
 from pydantic import BaseModel
+from auric.interface.server.auth import verify_token
 
 from auric.memory.focus_manager import FocusManager
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_token)])
 
 # --- Models ---
 
@@ -147,16 +148,34 @@ async def get_session_chat(request: Request, session_id: str):
 @router.post("/api/sessions/new")
 async def new_session(request: Request):
     """Starts a new chat session."""
+    
+    # 1. Archive Old Session
+    old_id = getattr(request.app.state, "current_session_id", None)
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    
+    if old_id and audit_logger:
+        await audit_logger.stub_summarize_session(old_id)
+
+    # 2. Create New Session
     new_id = str(uuid4())
     request.app.state.current_session_id = new_id
     
-    # Clear in-memory history so the UI starts fresh
+    # Create session in DB immediately so it shows up in lists
+    if audit_logger:
+        await audit_logger.create_session(name="New Session") # Optional: We could just let it be created on first msg
+    
+    # 3. Clear in-memory history so the UI starts fresh
     # (The old history is safely in DB)
     chat_history = getattr(request.app.state, "web_chat_history", None)
     if chat_history is not None:
         chat_history.clear()
         
-    return {"status": "New session started", "session_id": new_id}
+    # 4. Clear Focus (New Session = Fresh Context)
+    focus_manager = getattr(request.app.state, "focus_manager", None)
+    if focus_manager:
+        focus_manager.clear()
+
+    return {"status": "New session started", "session_id": new_id, "previous_session_id": old_id}
 
 @router.post("/api/sessions/{session_id}/rename")
 async def rename_session(request: Request, session_id: str, body: RenameRequest):
