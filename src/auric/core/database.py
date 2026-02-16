@@ -1,4 +1,5 @@
 import asyncio
+import aiofiles
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Any, Dict
@@ -315,11 +316,93 @@ class AuditLogger:
             result = await session.exec(statement)
             return result.one_or_none()
 
-    async def stub_summarize_session(self, session_id: str) -> None:
+    async def get_recent_session_content(self, session_id: str, limit: int = 15) -> str:
         """
-        Stub: Summarizes the last 15 messages of the session and stores it in long-term memory.
+        Retrieves recent session content for summarization.
+        Fetches the last N messages, filters for user/agent, and formats them.
         """
-        # logger is not global here, need to import or print. logic is inside AuditLogger.
-        # print(f"STUB: Summarizing session {session_id} (No-op)")
-        # Better to just pass.
-        pass
+        async with AsyncSession(self.engine) as session:
+            # Fetch last N messages
+            statement = select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.timestamp.desc()).limit(limit)
+            result = await session.exec(statement)
+            messages = list(reversed(result.all()))
+
+        formatted_content = []
+        for msg in messages:
+            if msg.role not in ["USER", "AGENT"]:
+                continue
+            
+            # Simple formatting
+            prefix = "User" if msg.role == "USER" else "Agent"
+            content = msg.content
+            
+            # Check for tool usage patterns (if not already structured)
+            # This is a basic heuristic since we store raw content for now
+            # In a real system we might parse the structured tool calls
+            # But the user requested simple string return.
+            
+            formatted_content.append(f"{prefix}: {content}")
+            
+        return "\n".join(formatted_content)
+
+    async def summarize_session(self, session_id: str, gateway: Any, model: str = "fast") -> None:
+        """
+        Summarizes the last 15 messages of the session and stores it in long-term memory.
+        """
+        if not session_id:
+            return
+
+        # 1. Get Content
+        content = await self.get_recent_session_content(session_id, limit=15)
+        if not content:
+            return
+
+        # 2. Prompt LLM
+        prompt = f"""
+Here is a transcript of the last 15 messages from a chat session:
+---
+{content}
+---
+Write any important or useful notes to memory/YYYY-MM-DD.md.
+Focus on:
+- User preferences
+- Key decisions
+- Completed tasks
+- Important context for future sessions
+
+If there is nothing important to store, respond with exactly: NULL
+"""
+        try:
+            # We need to use the gateway to call the LLM
+            # Method signature: chat_completion(messages, model_id=..., tier=...)
+            # "fast" model is usually mapped in config, ensuring we pass the right identifier
+            
+            messages = [{"role": "user", "content": prompt}]
+            
+            # Use 'tier' arg if gateway supports it, or model directly
+            # Assuming gateway.chat_completion handles tier="fast" mapping
+            response = await gateway.chat_completion(
+                messages=messages,
+                tier=model, 
+                temperature=0.3
+            )
+            
+            summary = response.choices[0].message.content.strip()
+            
+            if summary == "NULL":
+                return
+                
+            # 3. Write to File
+            # Calculate filename
+            today = datetime.now().strftime("%Y-%m-%d")
+            memory_file = AURIC_ROOT / "memories" / f"{today}.md"
+            
+            # Append content
+            async with aiofiles.open(memory_file, mode='a', encoding='utf-8') as f:
+                await f.write(f"\n\n**session summary ({datetime.now().strftime('%H:%M')}):** {summary}")
+                
+        except Exception as e:
+            # Import logger here since it's not global in this class scope context easily
+            # or just print for now as in the original stub
+            print(f"Error summarizing session: {e}")
+

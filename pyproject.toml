@@ -23,6 +23,7 @@ dependencies = [
     "python-telegram-bot",
     "discord.py",
     "psutil",
+    "aiofiles",
 ]
 
 [project.scripts]

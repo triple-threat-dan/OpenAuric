@@ -225,6 +225,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     # Inject into API state and add reload endpoint
     api_app.state.tool_registry = tool_registry
     api_app.state.focus_manager = focus_manager
+    api_app.state.gateway = gateway
 
     # If we started a NEW session (fresh install or no DB), clear focus
     if not last_session_id:
@@ -250,6 +251,23 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
         tool_registry=tool_registry,
         log_callback=log_to_bus
     )
+
+    # 5.1 Schedule Dream Cycle
+    from auric.memory.chronicles import perform_dream_cycle
+    
+    dream_time_str = config.agents.dream_time
+    try:
+        hour, minute = map(int, dream_time_str.split(':'))
+        scheduler.add_job(
+            perform_dream_cycle, 
+            'cron', 
+            hour=hour, 
+            minute=minute, 
+            args=[audit_logger, gateway, config]
+        )
+        logger.info(f"Dream Cycle scheduled for {dream_time_str} daily.")
+    except ValueError:
+        logger.error(f"Invalid dream_time format '{dream_time_str}'. Expected HH:MM. Dream Cycle disabled.")
 
     # 6. Start Brain Loop & Dispatcher
     async def dispatcher_loop():

@@ -154,7 +154,16 @@ async def new_session(request: Request):
     audit_logger = getattr(request.app.state, "audit_logger", None)
     
     if old_id and audit_logger:
-        await audit_logger.stub_summarize_session(old_id)
+        # Retrieve gateway from state (injected in daemon.py)
+        gateway = getattr(request.app.state, "gateway", None)
+        if gateway:
+             # Run in background to not block UI? 
+             # For now await it to ensure it finishes before context switch is fully "done" mentally
+             # But technically we can fire and forget if we want speed.
+             # User said "whenever a new session is created... trigger it".
+             await audit_logger.summarize_session(old_id, gateway)
+        else:
+             print("Warning: Gateway not found in app state, skipping summary.")
 
     # 2. Create New Session
     new_id = str(uuid4())

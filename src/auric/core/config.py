@@ -46,12 +46,13 @@ class AgentsConfig(BaseModel):
     """Configuration for agents."""
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
     name: str = "Auric"
-    smart_model: str = "gemini/gemini-1.5-pro"
-    fast_model: str = "gemini/gemini-1.5-flash"
+    smart_model: str = "gemini/gemini-2.5-pro"
+    fast_model: str = "gemini/gemini-2.5-flash"
     is_local: bool = False
     max_recursion: int = 2
     max_cost: float = 1.0
     max_turns: int = 15
+    dream_time: str = "04:00" # 24h format
 
 class GatewayConfig(BaseModel):
     """Configuration for the API gateway."""
