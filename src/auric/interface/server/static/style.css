@@ -307,6 +307,64 @@ main {
     font-size: 0.85rem;
     padding: 10px;
     /* Smaller padding */
+    display: flex;
+    align-items: center;
+    /* Center icon and text vertically */
+}
+
+/* Thinking Animation */
+.thinking-text {
+    font-style: italic;
+    color: #b0a0e0;
+}
+
+.thinking-dots {
+    display: inline-block;
+    width: 20px;
+    text-align: left;
+    animation: dot-pulse 1.5s infinite;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+@keyframes dot-pulse {
+    0% {
+        content: '.';
+    }
+
+    33% {
+        content: '..';
+    }
+
+    66% {
+        content: '...';
+    }
+
+    100% {
+        content: '';
+    }
+}
+
+/* Fallback for animation if content is not supported in keyframes (browsers vary) */
+/* Actually, animating 'content' is not fully supported in all browsers yet. */
+/* Let's use opacity/clip approach for better compatibility or just a simple pulse opacity */
+@keyframes dot-pulse {
+    0% {
+        opacity: 0.2;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.2;
+    }
+}
+
+/* Re-define thinking-dots to use pseudo-element or just simple text fade */
+.thinking-dots {
+    animation: dot-pulse 1.5s infinite ease-in-out;
 }
 
 .markdown-content a {

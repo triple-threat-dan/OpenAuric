@@ -24,6 +24,41 @@ class AuricDiscordClient(discord.Client):
         if message.author == self.user:
             return
 
+        # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
+        should_respond = False
+        
+        # 1. DMs are always intentional
+        if isinstance(message.channel, discord.DMChannel):
+            should_respond = True
+        
+        # 2. Direct Mention
+        elif self.user in message.mentions:
+            should_respond = True
+            
+        # 3. Name Mention
+        elif re.search(rf"\b{re.escape(self.pact.agent_name)}\b", message.content, re.IGNORECASE):
+            should_respond = True
+            
+        # 4. Reply to Bot
+        elif message.reference:
+            # Check if it's a reply to us
+            if message.reference.cached_message:
+                if message.reference.cached_message.author == self.user:
+                    should_respond = True
+            else:
+                # Need to fetch
+                try:
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                    if ref_msg and ref_msg.author == self.user:
+                        should_respond = True
+                except:
+                    # Message might be deleted or inaccessible
+                    pass
+
+        if not should_respond:
+            # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
+            return
+
         # Whitelist Checks / Pairing Authentication
         from auric.core.pairing import PairingManager
         pairing_mgr = PairingManager()
@@ -47,7 +82,7 @@ class AuricDiscordClient(discord.Client):
                 should_warn = True
             elif self.user in message.mentions:
                 should_warn = True
-            elif self.pact.agent_name.lower() in message.content.lower():
+            elif re.search(rf"\b{re.escape(self.pact.agent_name)}\b", message.content, re.IGNORECASE):
                 should_warn = True
                 
             if should_warn:
@@ -80,40 +115,7 @@ class AuricDiscordClient(discord.Client):
              await self.pact.trigger_new_session(str(message.channel.id))
              return
 
-        # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
-        should_respond = False
-        
-        # 1. DMs are always intentional
-        if isinstance(message.channel, discord.DMChannel):
-            should_respond = True
-        
-        # 2. Direct Mention
-        elif self.user in message.mentions:
-            should_respond = True
-            
-        # 3. Name Mention
-        elif self.pact.agent_name.lower() in message.content.lower():
-            should_respond = True
-            
-        # 4. Reply to Bot
-        elif message.reference:
-            # Check if it's a reply to us
-            if message.reference.cached_message:
-                if message.reference.cached_message.author == self.user:
-                    should_respond = True
-            else:
-                # Need to fetch
-                try:
-                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
-                    if ref_msg and ref_msg.author == self.user:
-                        should_respond = True
-                except:
-                    # Message might be deleted or inaccessible
-                    pass
 
-        if not should_respond:
-            # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
-            return
 
         # Parse Mentions and Clean Content
         clean_content = message.content

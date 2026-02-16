@@ -23,7 +23,7 @@ AURIC_WORKSPACE_DIR = AURIC_ROOT / "workspace"
 # Assume templates are relative to source root if running from source,
 # or packaged. For this repo structure:
 # src/auric/core/config.py -> ../../../templates
-AURIC_TEMPLATES_DIR = Path(__file__).parent.parent.parent.parent / "templates"
+AURIC_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 logger = logging.getLogger("auric.config")
 
@@ -51,6 +51,7 @@ class AgentsConfig(BaseModel):
     is_local: bool = False
     max_recursion: int = 2
     max_cost: float = 1.0
+    max_turns: int = 15
 
 class GatewayConfig(BaseModel):
     """Configuration for the API gateway."""

@@ -36,6 +36,7 @@ class ToolRegistry:
         self._register_internal_tool(self.list_files)
         self._register_internal_tool(self.read_file)
         self._register_internal_tool(self.write_file)
+        self._register_internal_tool(self.append_file)
         self._register_internal_tool(self.execute_powershell)
         self._register_internal_tool(self.run_python)
         
@@ -224,6 +225,21 @@ class ToolRegistry:
             return f"Error reading file: {str(e)}"
 
     @staticmethod
+    def _sanitize_content(path: str, content: str) -> str:
+        """
+        Helper to sanitize content before writing/appending.
+        Unescapes literal \\n sequences if appropriate for the file type.
+        """
+        if str(path).lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
+            if "\\n" in content:
+                # Unescape literal backslash+n unless preceded by a backslash
+                before = content
+                content = re.sub(r'(?<!\\)\\n', '\\n', content)
+                if content != before:
+                    logger.info(f"Automatically unescaped content for {path}")
+        return content
+
+    @staticmethod
     def write_file(path: str, content: str) -> str:
         """
         Write content to a file. Overwrites existing content. Supports `~` expansion.
@@ -237,18 +253,8 @@ class ToolRegistry:
         """
         try:
             file_path = Path(path).expanduser().resolve()
+            content = ToolRegistry._sanitize_content(path, content)
             
-            # Heuristic to fix common LLM double-escaping issue (e.g. for MEMORY.md)
-            # If content is meant to be a markdown/text file but contains literal "\n" 
-            # sequences without any actual newlines, we assume it was improperly escaped.
-            if str(file_path).lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
-                 if "\\n" in content and "\n" not in content:
-                      # Unescape literal backslash+n unless preceded by a backslash
-                      # This handles the case where the LLM wrote "Line 1\nLine 2" as a single line
-                      # but preserves "Line 1\\nLine 2" (literal \n).
-                      content = re.sub(r'(?<!\\)\\n', '\n', content)
-                      logger.info(f"Automatically unescaped content for {path}")
-
             # Ensure parent directory exists
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -258,6 +264,34 @@ class ToolRegistry:
              return f"Error: Permission denied writing to '{path}'."
         except Exception as e:
             return f"Error writing file: {str(e)}"
+
+    @staticmethod
+    def append_file(path: str, content: str) -> str:
+        """
+        Appends content to a file. Creates file if it doesn't exist. Supports `~` expansion.
+
+        Args:
+            path: The path to the file to append to.
+            content: The content to append.
+
+        Returns:
+            Success message or error message.
+        """
+        try:
+            file_path = Path(path).expanduser().resolve()
+            content = ToolRegistry._sanitize_content(path, content)
+            
+            # Ensure parent directory exists
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(file_path, "a", encoding="utf-8") as f:
+                f.write(content)
+                
+            return f"Successfully appended to {path}"
+        except PermissionError:
+             return f"Error: Permission denied appending to '{path}'."
+        except Exception as e:
+            return f"Error appending file: {str(e)}"
 
     @staticmethod
     def execute_powershell(command: str) -> str:

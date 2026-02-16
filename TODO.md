@@ -1,0 +1,37 @@
+Current issues:
+- [x] In the UI, instead of displaying the session ID in the ARCHIVES panel, display the session name, and default the session name to the (truncated) first line/few words of the first prompt of that session.
+- [x] Change communion/live communion in the ui to terminology that is less occult-ish.
+- [x] Display session name and id somewhere in the modal popup in the logs page
+- [x] llm/agent responses from discord don't show up in other areas such as the UI. They also seem to create a new session each time, unless I'm hallucinating? Instead of appending to the current session. Expected: the auric UI should show user and agent messages from ALL sources/pacts, and discord messages from auric should be appended to the current session, and the chat messages form the current session should be sent to the llm as a conversation history.
+- [x] the discord integration should only trigger the llm to respond if the agent's bot is tagged, replied to, or their name is mentioned (store agent/assistant name in the json)
+- [x] her cli tools might not be working, and check that they run in the workspace folder by default
+- [x] I don't think the chat assistant is actually creating sub-agents when needed, check how that works and verify that the RLM pieces are coded correctly
+- [x] need a mascot/logo and UI revamp. ALISS is the mascot, in a wizard's hat!
+- [x] the agent is just saying a tool call instead of actually... calling that tool
+- [x] architect a way for the agent to build new incantations when it needs to
+- [x] add a tool call to allow the agent to run arbitrary powershell commands
+- [x] github integration
+- [x] gemini cli integration
+- [ ] emotionsss. small model, runs every prompt or task, a global json state of the emotions, a method to inject that state into the system prompt for each call to the LLM
+- [ ] have the heartbeat logic update the emotional state too (gradually calm the agent)
+- [ ] I am not sure that heartbeats are working. Let's add a table called heartbeats to the database and log them there. Let's also add an auric heartbeat command so you can manually trigger one from the cli.
+- [ ] Daily memories aren't implemented? And need to be... `yyyy-mm-dd.md`, should be saved when important events happen. Perhaps after every interaction a small model is loaded up to summarize recent events and pick important bits to append to the file
+- [ ] allow multiple discord users to talk to aliss by having the user messages be prepended with the name of the sender so she knows which user(s) she's talking to
+- [ ] a re-runnable onboarding process via the cli that allows users to set tokens, select pacts, set the name of the agent, etc. 
+- [ ] actual vector db for long term memories
+- [ ] add support for searching/googling (Brave integration)
+- [x] give the agent the ability to make new spells and save them
+- [ ] previous session should load when the user opens the app instead of a new session automatically
+- [ ] support sending images to the agent
+- [ ] support sending multilines in the chatbox
+- [ ] auric -m "send a message from the CLI"
+- [ ] I think auric might have problems with the workspace, perhaps move workspace and install dir to a subfolder in the app directory
+- [ ] fix it so I don't have to do python -m auric.cli anymore and can just do auric <command>
+- [ ] look into auric status
+- [ ] add support for asking the agent to remember something, having it write to its memories, etc.
+- [ ] add support for receiving images from the agent
+- [ ] add support for sending files to the agent
+- [ ] add support for receivi ng files from the agent
+- [ ] SECURITY. Add token for the frontend ui.
+- [ ] SECURITY. Add pairing for discord integration.
+- [ ] add support for specialist agents/models for the rlm to call. 

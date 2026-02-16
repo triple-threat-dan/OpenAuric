@@ -29,6 +29,7 @@ from .database import AuditLogger
 # from auric.interface.tui.app import AuricTUI # TUI Disabled
 from auric.interface.server.routes import router as dashboard_router
 from rich.console import Console
+from rich.text import Text
 from datetime import datetime
 
 logger = logging.getLogger("auric.daemon")
@@ -266,13 +267,24 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      color = "white"
                      if level == "ERROR": color = "bold red"
                      elif level == "WARNING": color = "yellow"
-                     elif level == "THOUGHT": color = "dim cyan"
+                     elif level == "THOUGHT": 
+                         color = "dim cyan"
+                         # Truncate thoughts for console clarity
+                         lines = text.split('\n')
+                         first_line = lines[0] if lines else ""
+                         if len(first_line) > 100:
+                             first_line = first_line[:97] + "..."
+                         text_obj = Text(f"[{timestamp}] [{level}] {first_line}")
+                         if len(lines) > 1 or len(text) > 100:
+                              text_obj.append(" (more...)", style="dim")
+
                      elif level == "AGENT": color = "green"
                      elif level == "USER": color = "blue"
                      elif level == "TOOL": color = "magenta"
                      
-                     from rich.text import Text
-                     text_obj = Text(f"[{timestamp}] [{level}] {text}")
+                     if level != "THOUGHT": # Already created text_obj for THOUGHT
+                        text_obj = Text(f"[{timestamp}] [{level}] {text}")
+                     
                      text_obj.stylize(color)
                      console.print(text_obj)
                 else:

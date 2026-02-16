@@ -4,7 +4,7 @@ set -e
 # --- Configuration ---
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AURIC_HOME="$REPO_ROOT/.auric"
-TEMPLATE_DIR="$REPO_ROOT/templates"
+TEMPLATE_DIR="$REPO_ROOT/src/auric/templates"
 SERVICE_FILE="$HOME/.config/systemd/user/auric.service"
 
 echo "🔮 Initiating OpenAuric First Contact Sequence..."

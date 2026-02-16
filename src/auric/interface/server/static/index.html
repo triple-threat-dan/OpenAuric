@@ -273,8 +273,15 @@
                 } else if (level === "AGENT") {
                     className += " agent";
                     icon = "🧙‍♂️";
-                } else if (level === "THOUGHT") {
+                }
+
+                if (level === "THOUGHT") {
                     className += " thought";
+                    // For thoughts, we ignore the text content and show a standardized "Thinking..."
+                    // text = "Thinking..."; 
+                    // But we want the icon + text wrapper.
+                    // The icon is set below.
+                    // Let's override the content generation logic.
                     icon = "💭";
                 } else if (level === "UNKNOWN") {
                     // Try to infer from text or just default
@@ -285,8 +292,12 @@
                 }
 
                 // Parse Markdown for message content
-                // Ensure marked is available
-                const content = (typeof marked !== 'undefined') ? marked.parse(text) : text;
+                let content = (typeof marked !== 'undefined') ? marked.parse(text) : text;
+
+                // Override content for thoughts
+                if (level === "THOUGHT" || (level === "UNKNOWN" && text.startsWith("Thinking"))) {
+                    content = `<span class="thinking-text">Thinking</span><span class="thinking-dots">...</span>`;
+                }
 
                 return `<div class="${className}"><span class="icon">${icon}</span> <div class="text markdown-content">${content}</div></div>`;
             }).join('');

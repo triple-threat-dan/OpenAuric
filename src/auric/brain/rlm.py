@@ -128,7 +128,7 @@ class RLMEngine:
 
         # 4. ReAct Loop
         # We loop up to max_turns to allow for multi-step reasoning.
-        max_turns = 10
+        max_turns = self.config.agents.max_turns
         current_turn = 0
         
         # We start with the base messages
@@ -371,7 +371,7 @@ class RLMEngine:
                 parts.append(f"## User Context\n{user_path.read_text(encoding='utf-8')}")
 
         # 3. The Time
-        parts.append(f"## Current Time\n{datetime.now().isoformat()}")
+        parts.append(f"## Current Time\n{datetime.now().isoformat()} EST")
 
         # 4 Memory & Abilities
         memory_path = AURIC_ROOT / "memories" / "MEMORY.md"
