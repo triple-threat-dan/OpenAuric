@@ -330,36 +330,65 @@ class RLMEngine:
 
     def _parse_json_tool_calls(self, content: str) -> List[Any]:
         """
-        Fallback parser for markdown-wrapped JSON tool calls.
+        Fallback parser for markdown-wrapped JSON or XML-style tool calls.
         """
-        # Look for ```json { ... } ``` blocks
-        pattern = r"```json\s*(\{.*?\})\s*```"
-        matches = re.findall(pattern, content, re.DOTALL)
-        
         parsed_tools = []
-        for json_str in matches:
+        import uuid
+        
+        # 1. Try JSON Blocks: ```json { ... } ```
+        pattern_json = r"```json\s*(\{.*?\})\s*```"
+        matches_json = re.findall(pattern_json, content, re.DOTALL)
+        
+        for json_str in matches_json:
             try:
-                # Clean up newlines or comments if necessary, usually json.loads is strict
-                # Some models might add comments inside JSON, but specific regex for strict JSON is hard.
-                # We assume valid JSON block.
                 data = json.loads(json_str)
-                
                 if "name" in data and "arguments" in data:
-                    # RLM expects tool_call.function.name and .arguments (as string)
                     args_str = json.dumps(data["arguments"]) if isinstance(data["arguments"], dict) else str(data["arguments"])
-                    
-                    import uuid
                     tool_call = SimpleNamespace(
-                        id=f"call_{uuid.uuid4().hex[:8]}", # Dummy ID
-                        function=SimpleNamespace(
-                            name=data["name"],
-                            arguments=args_str
-                        )
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        function=SimpleNamespace(name=data["name"], arguments=args_str)
                     )
                     parsed_tools.append(tool_call)
             except Exception as e:
                 logger.warning(f"Failed to parse fallback tool JSON: {e}")
+
+        # 2. Try XML-style: <functioninvoke> / <functioncall> / <|DSML|...>
+        # This handles cases where the model hallucinates specialized XML formats
+        # We look for either tag name, including the "DSML" variant with potential unicode pipes
+        
+        # Regex explanation:
+        # < : start
+        # (?: ... ) : non-capturing group for prefix options
+        #   functioninvoke|functioncall : standard hallucinations
+        #   | : OR
+        #   [\uff5c|]DSML[\uff5c|](?:functioninvoke|functioncall|invoke) : DSML variant with normal or fullwidth pipe
+        # \s+name=... : attribute matching
+        pattern_xml = r"<(?:functioninvoke|functioncall|[\uff5c|]DSML[\uff5c|](?:functioninvoke|functioncall|invoke))\s+name=[\"'](?P<name>[\w_]+)[\"'][^>]*>(?P<args>.*?)</(?:functioninvoke|functioncall|[\uff5c|]DSML[\uff5c|](?:functioninvoke|functioncall|invoke))>"
+        matches_xml = re.finditer(pattern_xml, content, re.DOTALL | re.IGNORECASE)
+        
+        for match in matches_xml:
+            try:
+                fn_name = match.group("name")
+                inner_content = match.group("args")
+                args = {}
                 
+                # Parse parameters: <parameter name="key">value</parameter>
+                # OR <|DSML|parameter name="key"...>value</...>
+                param_pattern = r"<(?:parameter|[\uff5c|]DSML[\uff5c|]parameter)\s+name=[\"'](?P<key>[\w_]+)[\"'][^>]*>(?P<value>.*?)</(?:parameter|[\uff5c|]DSML[\uff5c|]parameter)>"
+                param_matches = re.finditer(param_pattern, inner_content, re.DOTALL | re.IGNORECASE)
+                
+                for pm in param_matches:
+                    args[pm.group("key")] = pm.group("value").strip()
+                
+                tool_call = SimpleNamespace(
+                    id=f"call_{uuid.uuid4().hex[:8]}",
+                    function=SimpleNamespace(name=fn_name, arguments=json.dumps(args))
+                )
+                parsed_tools.append(tool_call)
+                logger.info(f"Parsed XML tool call ({fn_name}): {args}")
+            except Exception as e:
+                 logger.warning(f"Failed to parse XML tool call: {e}")
+
         return parsed_tools
 
     def _assemble_system_prompt(self, task_context: TaskContext) -> str:

@@ -18,6 +18,11 @@ class AuricDiscordClient(discord.Client):
 
     async def on_ready(self):
         logger.info(f"Discord connected as {self.user} (ID: {self.user.id})")
+        # Ensure cache is populated
+        if self.intents.members:
+            for guild in self.guilds:
+                await guild.chunk()
+                logger.info(f"Chunked guild {guild.name} ({guild.member_count} members)")
 
     async def on_message(self, message: discord.Message):
         # Ignore own messages
@@ -199,6 +204,7 @@ class DiscordPact(BasePact):
         
         # Intents
         intents = discord.Intents.default()
+        intents.members = True # Required to see other users!
         intents.messages = True
         intents.message_content = True # Critical for reading content
         intents.dm_messages = True
@@ -239,18 +245,85 @@ class DiscordPact(BasePact):
     async def send_dm(self, user_id: str, content: str) -> None:
         """
         Send a Direct Message to a user.
+        Supports User ID (preferred) or Username (fallback).
         """
         if not self.client or not self.client.is_ready():
             logger.error("Cannot send DM: Discord Pact not ready.")
             return
 
         try:
-            u_id = int(user_id)
-            user = await self.client.fetch_user(u_id)
+            user = None
+            
+            # 1. Try as Numeric ID
+            if user_id.isdigit():
+                try:
+                    u_id = int(user_id)
+                    user = await self.client.fetch_user(u_id)
+                except Exception:
+                    pass
+            
+            # 2. Try as Username (Fallback)
+            if not user:
+                # Search in all accessible guilds
+                logger.info(f"Looking up user by name: '{user_id}'")
+                
+                # Check global cache first
+                for u in self.client.users:
+                    if u == self.client.user:
+                        continue
+                    if u.name.lower() == user_id.lower() or u.global_name == user_id:
+                        user = u
+                        break
+                
+                # If still not found, search in guilds specifically (sometimes global cache lags)
+                if not user:
+                    for guild in self.client.guilds:
+                        
+                        if u:
+                             if u == self.client.user: # Skip self
+                                 u = None
+                                 continue
+                             user = u
+                             break
+                        
+                        # Try exact match first
+                        u = discord.utils.get(guild.members, name=user_id)
+                        if u and u != self.client.user:
+                             user = u
+                             break
+                             
+                        # Try case-insensitive
+                        u = next((m for m in guild.members if m.name.lower() == user_id.lower() and m != self.client.user), None)
+                        if u:
+                             user = u
+                             break
+                             
+                        # Try display name
+                        u = next((m for m in guild.members if m.display_name.lower() == user_id.lower() and m != self.client.user), None)
+                        if u:
+                             user = u
+                             break
+
             if user:
+                logger.info(f"Resolved DM target to: {user.name} (ID: {user.id}) [Type: {type(user).__name__}]")
                 await user.send(content)
+                logger.info(f"Sent DM to {user.name} ({user.id})")
+                return f"Message sent to {user.name} ({user.id})"
             else:
-                 logger.error(f"User {user_id} not found for DM.")
+                 # Debug: List what we CAN see
+                 debug_info = []
+                 for g in self.client.guilds:
+                     members = [f"{m.name} ({m.display_name})" for m in g.members]
+                     debug_info.append(f"Guild {g.name}: {members[:5]}... (Total {len(members)})")
+                 
+                 error_msg = f"User '{user_id}' not found. Visibile Context: {'; '.join(debug_info)}"
+                 logger.error(error_msg)
+                 return error_msg
+                 
+        except Exception as e:
+            logger.error(f"Failed to send DM to {user_id}: {e}")
+            return f"Error sending DM: {e}"
+                 
         except Exception as e:
             logger.error(f"Failed to send DM to {user_id}: {e}")
 
@@ -446,8 +519,7 @@ class DiscordPact(BasePact):
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         if tool_name == "discord_send_dm":
-            await self.send_dm(args.get("user_id"), args.get("content"))
-            return "Message sent."
+            return await self.send_dm(args.get("user_id"), args.get("content"))
         elif tool_name == "discord_send_channel_message":
             await self.send_channel_message(args.get("channel_id"), args.get("content"))
             return "Message sent."
