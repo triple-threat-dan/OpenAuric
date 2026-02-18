@@ -134,10 +134,21 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
     print(f"💓 Heartbeat Triggered: {datetime.now().strftime('%H:%M:%S')}")
     logger.info("Heartbeat: Pulse triggered.")
 
+    # Log persistent heartbeat
+    hb = HeartbeatManager.get_instance()
+    
+    # Generate unique session ID for this specific heartbeat
+    # This prevents history pollution
+    from uuid import uuid4
+    session_id = f"heartbeat-{uuid4()}"
+
+    # Check Active Hours Logic first to determine status
+    status = "ALIVE"
     config = load_config()
     active_window = config.agents.defaults.heartbeat.active_hours
     
     # Simple active hours check 'HH:MM-HH:MM'
+    in_hours = False
     try:
         start_str, end_str = active_window.split('-')
         now = datetime.now()
@@ -149,49 +160,41 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
         start_minutes = start_h * 60 + start_m
         end_minutes = end_h * 60 + end_m
         
-        in_hours = False
         start_ts = datetime.combine(now.date(), datetime.min.time()) + timedelta(minutes=start_minutes)
         end_ts = datetime.combine(now.date(), datetime.min.time()) + timedelta(minutes=end_minutes)
         
         # Handle crossing midnight
         if end_minutes < start_minutes:
             end_ts += timedelta(days=1)
-            if now < start_ts and now < end_ts - timedelta(days=1): 
-                # Early morning before end time (e.g. 01:00 < 02:00)
-                pass 
-            elif now >= start_ts:
-                pass
+            # Logic for crossing midnight... simplified check:
+            if start_minutes <= current_minutes or current_minutes <= end_minutes:
+                in_hours = True
             else:
                 in_hours = False
         else:
              in_hours = start_minutes <= current_minutes <= end_minutes
             
-        # Check active window boolean
-        # Simplified logic:
-        if start_minutes <= end_minutes:
-             in_hours = start_minutes <= current_minutes <= end_minutes
-        else:
-             in_hours = current_minutes >= start_minutes or current_minutes <= end_minutes
-
-        if not in_hours:
-            logger.debug(f"Heartbeat: Outside active hours ({active_window}). Pulse skipped.")
-            return
-
     except Exception as e:
          logger.warning(f"Heartbeat: Could not parse active hours '{active_window}': {e}. Proceeding anyway.")
+         in_hours = True # Fail open? Or closed? Let's say open for safety.
 
-    # Check Heartbeat File
+    if not in_hours:
+        status = "SKIPPED"
+        logger.debug(f"Heartbeat: Outside active hours ({active_window}). Pulse skipped.")
+
+    # Always log the heartbeat attempt
     heartbeat_file = AURIC_ROOT / "HEARTBEAT.md"
-    
-    # Log persistent heartbeat
-    hb = HeartbeatManager.get_instance()
     if hb.audit_logger:
-        await hb.audit_logger.log_heartbeat(status="PULSE", meta={
+        await hb.audit_logger.log_heartbeat(status=status, meta={
             "active_window": active_window, 
-            "in_hours": True,
+            "in_hours": in_hours,
             "has_heartbeat_file": heartbeat_file.exists()
         })
 
+    if status == "SKIPPED":
+        return
+
+    # Check Heartbeat File
     if heartbeat_file.exists():
         content = heartbeat_file.read_text(encoding="utf-8")
         if "- " in content:
@@ -210,7 +213,7 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
                         "level": "USER",
                         "message": prompt,
                         "source": "HEARTBEAT",
-                        "session_id": "heartbeat-vigil"
+                        "session_id": session_id 
                     })
                 except Exception as ex:
                     logger.error(f"Heartbeat Bus Error: {ex}")

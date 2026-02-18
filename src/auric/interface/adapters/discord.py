@@ -142,6 +142,8 @@ class AuricDiscordClient(discord.Client):
             timestamp=message.created_at,
             metadata={
                 "channel_id": str(message.channel.id),
+                "channel_name": getattr(message.channel, "name", "DM"),
+                "guild_name": getattr(message.guild, "name", "Direct Message") if message.guild else "Direct Message",
                 "author_id": str(message.author.id),
                 "author_name": message.author.name,
                 "author_display": message.author.display_name,

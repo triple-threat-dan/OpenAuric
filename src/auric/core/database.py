@@ -288,14 +288,31 @@ class AuditLogger:
             await session.exec(delete(ChatMessage))
             await session.commit()
 
-    async def create_session(self, name: Optional[str] = None) -> str:
+    async def create_session(self, name: Optional[str] = None, session_id: Optional[str] = None) -> str:
         """Creates a new session and returns its ID."""
-        session_id = str(uuid4())
+        if not session_id:
+            session_id = str(uuid4())
+        
         session = Session(id=session_id, name=name)
         async with AsyncSession(self.engine) as db:
+            # Check if exists (upsert logic or fail? let's fail if ID collision unless handled)
+            # Actually for strict session management, we might want get_or_create logic externally
+            # But here let's just add. SQLModel might error if PK exists.
+            # Let's use merge to be safe for upserts? No, explicit create is better.
+            # If provided ID exists, we probably shouldn't be calling "create". 
+            # But let's check first to prevent crash.
+            existing = await db.get(Session, session_id)
+            if existing:
+                 return session_id
+                 
             db.add(session)
             await db.commit()
         return session_id
+
+    async def get_session(self, session_id: str) -> Optional[Session]:
+        """Retrieves a session by ID."""
+        async with AsyncSession(self.engine) as db:
+            return await db.get(Session, session_id)
 
     async def rename_session(self, session_id: str, new_name: str) -> None:
         """Renames a session."""

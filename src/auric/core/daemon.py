@@ -318,7 +318,11 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      
                      # Chat History filters
                      if level in ("USER", "AGENT", "THOUGHT"):
-                          web_chat_history.append(msg)
+                          # Only show non-heartbeat messages in the Web UI Chat
+                          # Heartbeats are still logged to DB below
+                          if msg.get("source") != "HEARTBEAT":
+                              web_chat_history.append(msg)
+                              
                           # Persist to DB with current session ID
                           # Prefer session_id from message, fallback to global state
                           msg_sid = msg.get("session_id")
@@ -373,8 +377,33 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      # Inject Session ID from Global State if available
                      current_sid = getattr(api_app.state, "current_session_id", None)
                      
-                     # If source is PACT, we want to unify the session
+                     # Session Management for PACTs
                      if source == "PACT" and not session_id:
+                         # Deterministic Session ID: pact-{platform}-{sender_id}
+                         # sender_id is channel_id for Discord, user_id for DM
+                         safe_platform = (platform or "unknown").lower()
+                         safe_sender = (sender_id or "unknown").replace(" ", "_")
+                         session_id = f"pact-{safe_platform}-{safe_sender}"
+                         
+                         # Ensure Session Exists
+                         if api_app.state.audit_logger:
+                             # Check if exists (optimization: cache locally? for now DB check is fine)
+                             existing = await api_app.state.audit_logger.get_session(session_id)
+                             if not existing:
+                                 # Generate Name
+                                 name = f"Pact Session {session_id}"
+                                 if platform == "discord" and isinstance(item, dict) and "event" in item:
+                                     evt = item["event"]
+                                     if evt.metadata.get("is_dm"):
+                                          name = f"@{evt.metadata.get('author_display')} (Discord DM)"
+                                     else:
+                                          name = f"#{evt.metadata.get('channel_name')} in {evt.metadata.get('guild_name')}"
+                                 
+                                 logger.info(f"Creating new PACT session: {session_id} ({name})")
+                                 await api_app.state.audit_logger.create_session(name=name, session_id=session_id)
+                     
+                     # If WEB/Other and no session, use current
+                     if not session_id:
                          session_id = current_sid
 
                      await internal_bus.put({

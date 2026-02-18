@@ -117,11 +117,12 @@ If no updates are needed for a category, return an empty list.
         
         result_json = response.choices[0].message.content
         import json
+        import html
         data = json.loads(result_json)
         
-        cleaned_log = data.get("cleaned_daily_log", "")
-        memory_updates = data.get("memory_updates", [])
-        user_updates = data.get("user_updates", [])
+        cleaned_log = html.unescape(data.get("cleaned_daily_log", ""))
+        memory_updates = [html.unescape(u) for u in data.get("memory_updates", [])]
+        user_updates = [html.unescape(u) for u in data.get("user_updates", [])]
         
         # --- Step 3: Apply Updates ---
         

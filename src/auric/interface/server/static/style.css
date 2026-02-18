@@ -277,6 +277,18 @@ main {
     /* Slightly larger text */
 }
 
+.chat-entry .text {
+    flex: 1;
+    min-width: 0;
+    /* Critical for pre/code overflow in flex items */
+    overflow-wrap: break-word;
+}
+
+.chat-entry .icon {
+    font-size: 1.2rem;
+    padding-top: 2px;
+}
+
 /* User Message: Tiger Flame Theme */
 .chat-entry.user {
     flex-direction: row-reverse;
@@ -518,7 +530,7 @@ button:hover {
     padding: 40px;
     border-radius: 8px;
     width: 100%;
-    max-width: 450px;
+    max-width: 1150px;
     text-align: center;
     box-shadow: 0 0 30px rgba(10, 189, 199, 0.15);
     position: relative;
