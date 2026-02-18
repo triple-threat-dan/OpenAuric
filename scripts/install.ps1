@@ -11,15 +11,15 @@ Write-Host ">>> Initiating OpenAuric First Contact Sequence..." -ForegroundColor
 
 # --- 1. Pre-flight Checks ---
 
-# Check Python version >= 3.11
+# Check Python version >= 3.12
 if (Get-Command python -ErrorAction SilentlyContinue) {
     # Simple string concatenation
     $PythonVer = python -c "import sys; print(str(sys.version_info.major) + '.' + str(sys.version_info.minor))"
-    $ReqVer = [Version]"3.11"
+    $ReqVer = [Version]"3.12"
     $CurVer = [Version]$PythonVer
     
     if ($CurVer -lt $ReqVer) {
-        Write-Error "[ERROR] Python 3.11+ is required. Found $PythonVer."
+        Write-Error "[ERROR] Python 3.12+ is required. Found $PythonVer."
     }
     Write-Host "[OK] Python $PythonVer detected." -ForegroundColor Green
 }

@@ -27,8 +27,9 @@ class ToolRegistry:
     Acts as an MCP Client/Host, bundling internal tools and connecting to external ones.
     """
 
-    def __init__(self, config: AuricConfig):
+    def __init__(self, config: AuricConfig, librarian=None):
         self.config = config
+        self.librarian = librarian
         self._internal_tools: Dict[str, Callable] = {}
         self._spells: Dict[str, Dict[str, Any]] = {} # name -> spell_data
         
@@ -39,6 +40,10 @@ class ToolRegistry:
         self._register_internal_tool(self.append_file)
         self._register_internal_tool(self.execute_powershell)
         self._register_internal_tool(self.run_python)
+        
+        # Register Memory Tools
+        if self.librarian:
+            self._register_internal_tool(self.memory_search)
         
         # Initialize Sandbox
         self.sandbox = SandboxManager(config)
@@ -338,6 +343,32 @@ class ToolRegistry:
             return await self.sandbox.run_python(code)
         except Exception as e:
             return f"Error executing Python code: {str(e)}"
+
+    def memory_search(self, query: str) -> str:
+        """
+        Search the agent's memory (Grimoire) for relevant information using semantic search.
+        
+        Args:
+            query: The search query to find relevant memories.
+            
+        Returns:
+            A formatted string of relevant memory snippets.
+        """
+        if not self.librarian:
+            return "Error: Librarian not available."
+            
+        results = self.librarian.search(query)
+        if not results:
+            return "No relevant memories found."
+            
+        output = []
+        for res in results:
+            source = res['metadata'].get('filename', 'Unknown')
+            content = res['content']
+            distance = res.get('distance', 0)
+            output.append(f"--- from {source} (dist: {distance:.4f}) ---\n{content}\n")
+            
+        return "\n".join(output)
 
     # ==========================================================================
     # Registry Operations

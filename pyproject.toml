@@ -3,7 +3,7 @@ name = "open-auric"
 version = "0.1.0"
 description = "OpenAuric: A local-first, recursive AI agent."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "typer",
     "textual",
@@ -24,6 +24,7 @@ dependencies = [
     "discord.py",
     "psutil",
     "aiofiles",
+    "sentence-transformers",
 ]
 
 [project.scripts]

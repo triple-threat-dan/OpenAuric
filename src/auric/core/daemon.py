@@ -220,12 +220,19 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
-    tool_registry = ToolRegistry(config)
+    tool_registry = ToolRegistry(config, librarian=librarian)
     
     # Inject into API state and add reload endpoint
     api_app.state.tool_registry = tool_registry
     api_app.state.focus_manager = focus_manager
     api_app.state.gateway = gateway
+
+    # Trigger initial re-indexing (background task)
+    asyncio.create_task(librarian.start_reindexing())
+
+    # Schedule periodic re-indexing (e.g., every hour)
+    scheduler.add_job(librarian.start_reindexing, 'interval', hours=1)
+    logger.info("Scheduled periodic memory re-indexing (every 1 hour).")
 
     # If we started a NEW session (fresh install or no DB), clear focus
     if not last_session_id:
