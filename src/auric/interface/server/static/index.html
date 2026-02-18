@@ -26,7 +26,10 @@
             <section class="panel" id="session-panel">
                 <div class="panel-header">
                     <h2>📚 SESSIONS</h2>
-                    <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
+                    <div class="session-controls">
+                        <button id="close-all-btn" onclick="closeAllSessions()" title="Close All Active Sessions (Nuclear)" style="background: #e74c3c; margin-right: 5px;">☢️</button>
+                        <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
+                    </div>
                 </div>
                 <div class="content scroll-box" id="session-list">
                     <div class="session-item active" id="session-live" onclick="switchSession(null)">
@@ -423,11 +426,14 @@
                     const displayName = sess.name || sess.session_id;
                     return `
                     <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${sess.session_id}')">
-                        <div class="session-id">${displayName}</div>
-                        <div class="session-meta">
-                            <span>${date}</span>
-                            <span>${sess.message_count} msgs</span>
+                        <div class="session-content">
+                            <div class="session-id">${displayName}</div>
+                            <div class="session-meta">
+                                <span>${date}</span>
+                                <span>${sess.message_count} msgs</span>
+                            </div>
                         </div>
+                        <button class="close-session-btn" onclick="event.stopPropagation(); closeSession('${sess.session_id}')" title="Close Session">×</button>
                     </div>`;
                 }).join('');
 
@@ -466,12 +472,47 @@
             if (!skipConfirm && !confirm("Start a new session?")) return;
 
             try {
-                await fetchAuth(`${API_URL}/sessions/new`, { method: 'POST' });
+                await fetchAuth(`${API_URL}/sessions/new`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context: "web" }) 
+                });
+                
                 // Switch to live view
-                switchSession(null);
+                activeSessionId = null; 
+                document.getElementById('chat-content').innerHTML = ''; // Clear chat immediately
+                fetchSessions();
+                updateState();
             } catch (e) {
                 alert("Failed to start new session");
             }
+        }
+
+        async function closeSession(sessionId) {
+            if (!confirm("Close this session? It will be archived.")) return;
+            try {
+                await fetchAuth(`${API_URL}/sessions/${sessionId}/close`, { method: 'POST' });
+                if (activeSessionId === sessionId) {
+                    activeSessionId = null;
+                    document.getElementById('chat-content').innerHTML = '';
+                }
+                fetchSessions();
+            } catch (e) {
+                alert("Failed to close session: " + e.message);
+            }
+        }
+
+        async function closeAllSessions() {
+             if (!confirm("☢️ NUCLEAR OPTION ☢️\n\nAre you sure you want to close ALL active sessions (Web, Discord, etc)?\nThis will rotate everything to fresh states.")) return;
+             try {
+                 await fetchAuth(`${API_URL}/sessions/closeall`, { method: 'POST' });
+                 activeSessionId = null;
+                 document.getElementById('chat-content').innerHTML = '';
+                 fetchSessions();
+                 alert("All sessions closed.");
+             } catch (e) {
+                 alert("Failed to close all sessions: " + e.message);
+             }
         }
 
         // Loop

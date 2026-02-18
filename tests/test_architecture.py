@@ -55,7 +55,7 @@ async def test_dashboard_disconnect_preserves_state(mock_config):
     from auric.memory.focus_manager import FocusManager, FocusModel
     from pathlib import Path
     
-    focus_file = Path("~/.auric/grimoire/FOCUS_TEST.md").expanduser()
+    focus_file = Path("./.auric/grimoire/FOCUS_TEST.md").expanduser()
     focus_file.parent.mkdir(parents=True, exist_ok=True)
     
     # State 1

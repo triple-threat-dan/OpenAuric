@@ -211,6 +211,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     from auric.memory.focus_manager import FocusManager
     from auric.brain.rlm import RLMEngine
     from auric.spells.tool_registry import ToolRegistry
+    from auric.core.session_router import SessionRouter
 
     gateway = LLMGateway(config, audit_logger=audit_logger)
     
@@ -221,11 +222,13 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
     tool_registry = ToolRegistry(config, librarian=librarian)
+    session_router = SessionRouter(AURIC_ROOT / "active_sessions.json")
     
     # Inject into API state and add reload endpoint
     api_app.state.tool_registry = tool_registry
     api_app.state.focus_manager = focus_manager
     api_app.state.gateway = gateway
+    api_app.state.session_router = session_router
 
     # Trigger initial re-indexing (background task)
     asyncio.create_task(librarian.start_reindexing())
@@ -386,25 +389,24 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      
                      # Session Management for PACTs
                      if source == "PACT" and not session_id:
-                         # Deterministic Session ID: pact-{platform}-{sender_id}
-                         # sender_id is channel_id for Discord, user_id for DM
-                         safe_platform = (platform or "unknown").lower()
-                         safe_sender = (sender_id or "unknown").replace(" ", "_")
-                         session_id = f"pact-{safe_platform}-{safe_sender}"
+                         # Use SessionRouter to get consistent but rotatable ID
+                         # Context is platform:sender_id (e.g. discord:123456789)
+                         context_key = f"{platform}:{sender_id}"
+                         session_id = session_router.get_active_session_id(context_key)
                          
-                         # Ensure Session Exists
+                         # Ensure Session Exists in DB (metadata update)
                          if api_app.state.audit_logger:
                              # Check if exists (optimization: cache locally? for now DB check is fine)
                              existing = await api_app.state.audit_logger.get_session(session_id)
                              if not existing:
                                  # Generate Name
-                                 name = f"Pact Session {session_id}"
+                                 name = f"Pact Session {session_id[:8]}"
                                  if platform == "discord" and isinstance(item, dict) and "event" in item:
                                      evt = item["event"]
                                      if evt.metadata.get("is_dm"):
-                                          name = f"@{evt.metadata.get('author_display')} (Discord DM)"
+                                          name = f"@{evt.metadata.get('author_display')}"
                                      else:
-                                          name = f"#{evt.metadata.get('channel_name')} in {evt.metadata.get('guild_name')}"
+                                          name = f"#{evt.metadata.get('channel_name')}"
                                  
                                  logger.info(f"Creating new PACT session: {session_id} ({name})")
                                  await api_app.state.audit_logger.create_session(name=name, session_id=session_id)

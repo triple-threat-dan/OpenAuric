@@ -12,7 +12,7 @@ async def test_memory_persistence(mock_config):
     Test that state persists across "restarts" (re-instantiation).
     """
     # 1. "Run" Agent -> Write to memory
-    memory_file = Path("~/.auric/grimoire/USER.md").expanduser()
+    memory_file = Path("./.auric/grimoire/USER.md").expanduser()
     memory_file.parent.mkdir(parents=True, exist_ok=True)
     memory_file.write_text("My name is Jace.", encoding="utf-8")
     

@@ -406,7 +406,10 @@ class RLMEngine:
         # 5. The Tools
         # We use Native Function Calling. 
         # However, we can list high-level capabilities here if needed.
-        parts.append("## Available Tools\nYou have access to native tools for file operations, shell execution, and python coding. Use them when needed.")
+        parts.append("## Available Tools\nYou have access to native tools for file operations, shell execution, and python coding.\n")
+        parts.append("- **memory_search**: Use this to find information in your Grimoire/Memories. It uses semantic search to find relevant snippets. PREFER this over reading files directly when looking for information.")
+        parts.append("- **read_file**: Use this only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
+
 
         # Inject Pact Tools
         if self.pact_manager:

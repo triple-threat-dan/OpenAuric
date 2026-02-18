@@ -38,14 +38,14 @@ fi
 
 # --- 2. The Setup ---
 
-echo "📂 Setting up ~/.auric..."
+echo "📂 Setting up ./auric..."
 mkdir -p "$AURIC_HOME"
 
 # Copy templates without overwriting existing config
 if [ -d "$TEMPLATE_DIR" ]; then
     echo "📜 Copying Default Knowledge Pack..."
     # rsync is safer but cp -n is standard. We'll use a loop to be safe and interactive-ish logic implies soft skip.
-    # We want to copy contents of .auric/ to ~/.auric/
+    # We want to copy contents of .auric/ to ./auric/
     # Using cp -rn to not overwrite
     cp -rn "$TEMPLATE_DIR/"* "$AURIC_HOME/" || true
     echo "✅ Templates copied (existing files preserved)."

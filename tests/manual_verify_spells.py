@@ -76,7 +76,7 @@ async def main():
         print(f"[FAIL] Python execution error: {e}")
 
     # 6. Check SPELLS.md
-    spells_md = Path("~/.auric/grimoire/SPELLS.md").expanduser()
+    spells_md = Path("./.auric/grimoire/SPELLS.md").expanduser()
     if spells_md.exists():
         content = spells_md.read_text(encoding="utf-8")
         # should NOT contain ## powershell

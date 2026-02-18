@@ -102,7 +102,7 @@ Destroy the One Ring.
 ## 🧠 Working Memory (Scratchpad)
 Frodo is tired.
 """
-    focus_path = Path("~/.auric/grimoire/FOCUS.md").expanduser()
+    focus_path = Path("./.auric/grimoire/FOCUS.md").expanduser()
     focus_path.parent.mkdir(parents=True, exist_ok=True)
     focus_path.write_text(focus_content, encoding="utf-8")
     

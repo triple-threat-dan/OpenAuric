@@ -40,6 +40,10 @@ class LLMLogsResponse(BaseModel):
 class RenameRequest(BaseModel):
     name: str
 
+class NewSessionRequest(BaseModel):
+    context: str = "web" # "web" or "global" or specific context like "discord:123"
+
+
 # --- Routes ---
 
 @router.get("/api/status", response_model=StatusResponse)
@@ -148,45 +152,98 @@ async def get_session_chat(request: Request, session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/api/sessions/new")
-async def new_session(request: Request):
-    """Starts a new chat session."""
+async def new_session(request: Request, body: NewSessionRequest = None):
+    """
+    Starts a new chat session. 
+    If context is 'web' (default), it just rotates the current UI session.
+    If context is 'global', it might rotate everything (nuclear).
+    """
+    context = body.context if body else "web"
     
-    # 1. Archive Old Session
-    old_id = getattr(request.app.state, "current_session_id", None)
+    # Access SessionRouter
+    session_router = getattr(request.app.state, "session_router", None)
     audit_logger = getattr(request.app.state, "audit_logger", None)
     
-    if old_id and audit_logger:
-        # Retrieve gateway from state (injected in daemon.py)
-        gateway = getattr(request.app.state, "gateway", None)
-        if gateway:
-             # Run in background to not block UI? 
-             # For now await it to ensure it finishes before context switch is fully "done" mentally
-             # But technically we can fire and forget if we want speed.
-             # User said "whenever a new session is created... trigger it".
-             await audit_logger.summarize_session(old_id, gateway)
-        else:
-             print("Warning: Gateway not found in app state, skipping summary.")
-
-    # 2. Create New Session
-    new_id = str(uuid4())
-    request.app.state.current_session_id = new_id
+    old_id = None
+    new_id = None
     
-    # Create session in DB immediately so it shows up in lists
-    if audit_logger:
-        await audit_logger.create_session(name="New Session") # Optional: We could just let it be created on first msg
-    
-    # 3. Clear in-memory history so the UI starts fresh
-    # (The old history is safely in DB)
-    chat_history = getattr(request.app.state, "web_chat_history", None)
-    if chat_history is not None:
-        chat_history.clear()
+    if context == "web":
+        # 1. Archive Old Session (Web Specific)
+        old_id = getattr(request.app.state, "current_session_id", None)
         
-    # 4. Clear Focus (New Session = Fresh Context)
-    focus_manager = getattr(request.app.state, "focus_manager", None)
-    if focus_manager:
-        focus_manager.clear()
+        if old_id and audit_logger:
+            gateway = getattr(request.app.state, "gateway", None)
+            if gateway:
+                 await audit_logger.summarize_session(old_id, gateway)
 
-    return {"status": "New session started", "session_id": new_id, "previous_session_id": old_id}
+        # 2. Create New Session
+        new_id = str(uuid4())
+        request.app.state.current_session_id = new_id
+        
+        # Create session in DB immediately
+        if audit_logger:
+            await audit_logger.create_session(name="New Session", session_id=new_id)
+        
+        # 3. Clear in-memory history
+        chat_history = getattr(request.app.state, "web_chat_history", None)
+        if chat_history is not None:
+            chat_history.clear()
+            
+        # 4. Clear Focus
+        focus_manager = getattr(request.app.state, "focus_manager", None)
+        if focus_manager:
+            focus_manager.clear()
+            
+    else:
+        # Specific Context (e.g. "discord:12345")
+        if session_router:
+            new_id = session_router.start_new_session(context)
+            # Create session in DB immediately
+            if audit_logger:
+                await audit_logger.create_session(name=f"New Session ({context})", session_id=new_id)
+
+    return {"status": "New session started", "session_id": new_id, "previous_session_id": old_id, "context": context}
+
+@router.post("/api/sessions/closeall")
+async def close_all_sessions(request: Request):
+    """
+    Closes ALL active sessions (Nuclear Option).
+    """
+    session_router = getattr(request.app.state, "session_router", None)
+    if session_router:
+        session_router.close_all_sessions()
+        return {"status": "All sessions closed"}
+    return {"status": "error", "message": "SessionRouter not available"}
+
+@router.post("/api/sessions/{session_id}/close")
+async def close_session(request: Request, session_id: str):
+    """
+    Closes a specific session if it is active.
+    This effectively just means removing it from the active map so a new one is generated next time.
+    """
+    session_router = getattr(request.app.state, "session_router", None)
+    if session_router:
+        # Find context for this session_id
+        active_map = session_router.list_active_contexts()
+        found_context = None
+        for ctx, sid in active_map.items():
+            if sid == session_id:
+                found_context = ctx
+                break
+        
+        if found_context:
+            session_router.close_session(found_context)
+            return {"status": "Session closed", "context": found_context}
+        else:
+             # Might be the web session?
+             current_web_sid = getattr(request.app.state, "current_session_id", None)
+             if current_web_sid == session_id:
+                 # "Closing" web session just means generating a new one
+                 new_id = str(uuid4())
+                 request.app.state.current_session_id = new_id
+                 return {"status": "Web session closed/rotated"}
+                 
+    return {"status": "Session not found or not active"}
 
 @router.post("/api/sessions/{session_id}/rename")
 async def rename_session(request: Request, session_id: str, body: RenameRequest):

@@ -37,6 +37,9 @@ app.add_typer(memory_app, name="memory")
 focus_app = typer.Typer(help="Manage Agent Focus")
 app.add_typer(focus_app, name="focus")
 
+sessions_app = typer.Typer(help="Manage Active Sessions")
+app.add_typer(sessions_app, name="sessions")
+
 console = Console()
 
 PID_FILE = AURIC_ROOT / "auric.pid"
@@ -236,7 +239,7 @@ def spells_create(name: str):
         console.print("[red]Invalid spell name. Use alphanumeric, hyphens, or underscores.[/red]")
         raise typer.Exit(1)
         
-    spells_dir = Path("./.auric/grimoire/spells").expanduser()
+    spells_dir = Path("./.auric/grimoire").expanduser()
     spell_path = spells_dir / name
     
     if spell_path.exists():
@@ -636,6 +639,49 @@ def focus_get(
             
     except Exception as e:
         console.print(f"[red]Failed to read focus: {e}[/red]")
+
+# --- Session Commands ---
+
+@sessions_app.command("list")
+def sessions_list():
+    """List all active sessions (Context -> SessionID)."""
+    from auric.core.session_router import SessionRouter
+    
+    try:
+        router = SessionRouter()
+        active = router.list_active_contexts()
+        
+        if not active:
+            console.print("[yellow]No active sessions found.[/yellow]")
+            return
+            
+        console.print(f"[bold green]Found {len(active)} active sessions:[/bold green]")
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Context")
+        table.add_column("Session ID")
+        
+        for context, sid in active.items():
+            table.add_row(context, sid)
+            
+        console.print(table)
+        
+    except Exception as e:
+        console.print(f"[red]Error listing sessions: {e}[/red]")
+
+@sessions_app.command("closeall")
+def sessions_closeall():
+    """Close ALL active sessions (Nuclear Option)."""
+    from auric.core.session_router import SessionRouter
+    
+    if not typer.confirm("Are you sure you want to close ALL active sessions? This will rotate IDs for everyone."):
+        raise typer.Abort()
+        
+    try:
+        router = SessionRouter()
+        router.close_all_sessions()
+        console.print("[bold green]All sessions closed.[/bold green]")
+    except Exception as e:
+        console.print(f"[red]Error closing sessions: {e}[/red]")
 
 if __name__ == "__main__":
     app()
