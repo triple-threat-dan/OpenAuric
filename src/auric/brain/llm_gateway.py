@@ -24,8 +24,8 @@ class LLMGateway:
         self._local_semaphore = asyncio.Semaphore(1)
         
         # Cache model names from config for easy access
-        self.smart_model_id = config.agents.smart_model
-        self.fast_model_id = config.agents.fast_model
+        # Now using the new dictionary structure
+        self.models_config = config.agents.models
         
         # Store keys for access during completion
         self.keys = config.keys
@@ -69,27 +69,43 @@ class LLMGateway:
             **kwargs: Additional arguments passed to litellm (temperature, etc.)
         """
         
-        # Resolve model
-        if tier == "fast":
-            model = self.fast_model_id
-        else:
-            model = self.smart_model_id
+        # Resolve model from config
+        model_config = self.models_config.get(tier)
+        if not model_config:
+            logger.warning(f"Model tier '{tier}' not found in config. Defaulting to 'smart_model'.")
+            model_config = self.models_config.get("smart_model")
+            
+        if not model_config:
+             raise ValueError(f"No model configuration found for tier '{tier}' and no default available.")
+
+        if not model_config.enabled:
+             raise ValueError(f"Model tier '{tier}' is disabled in configuration.")
+
+        model = model_config.model
+        provider = model_config.provider
             
         check_local = self.is_local_model(model)
         
         # Determine API key based on provider
         api_key = None
         try:
-            # We try to guess user intent if they provided a key in config
-            # We try to guess user intent if they provided a key in config
-            if self.keys.openrouter and "openrouter" in model:
-                api_key = self.keys.openrouter
-            elif self.keys.openai and "gpt" in model:
-                api_key = self.keys.openai
-            elif self.keys.anthropic and "claude" in model:
-                api_key = self.keys.anthropic
-            elif self.keys.gemini and "gemini" in model:
-                api_key = self.keys.gemini
+            # Pydantic model dump for keys
+            keys_dict = self.keys.model_dump(exclude_none=True)
+            
+            # 1. Direct provider match from config
+            if provider in keys_dict:
+                 api_key = keys_dict[provider]
+            
+            # 2. Fallback heuristic (legacy support if provider is generic like "openai" but model is "gpt-4")
+            if not api_key:
+                if "openrouter" in provider or "openrouter" in model:
+                    api_key = self.keys.openrouter
+                elif "openai" in provider or "gpt" in model:
+                    api_key = self.keys.openai
+                elif "anthropic" in provider or "claude" in model:
+                    api_key = self.keys.anthropic
+                elif "gemini" in provider or "gemini" in model:
+                    api_key = self.keys.gemini
         except Exception:
             # Fallback to env vars handled by litellm
             pass

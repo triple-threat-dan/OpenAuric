@@ -1,4 +1,5 @@
 import logging
+print("DEBUG: LOADING MODIFIED RLM.PY FROM SOURCE")
 import hashlib
 import json
 import json
@@ -116,7 +117,24 @@ class RLMEngine:
 
         # 2. Focus-Shift: Gather Context
         # We query the librarian for relevant knowledge based on the user query
-        snippets = self.librarian.search(user_query)
+        search_results = self.librarian.search(user_query)
+        # Extract just the content string for the context
+        # Defensive extraction with logging
+        snippets = []
+        if search_results:
+            # check the first item
+            first = search_results[0]
+            logger.error(f"DEBUG_DUMP: search_results len={len(search_results)}")
+            logger.error(f"DEBUG_DUMP: first result type={type(first)}")
+            logger.error(f"DEBUG_DUMP: first result={first}")
+            
+            for i, res in enumerate(search_results):
+                if isinstance(res, dict) and "content" in res:
+                    snippets.append(str(res["content"])) # Force string
+                else:
+                    logger.error(f"DEBUG_WARN: Item {i} missing content or not dict: {res}")
+                    snippets.append(str(res)) # Fallback
+        
         task_context = TaskContext(
             query=user_query,
             relevant_snippets=snippets,
@@ -189,7 +207,7 @@ class RLMEngine:
             try:
                 response = await self.gateway.chat_completion(
                     messages=messages,
-                    tier="smart",
+                    tier="smart_model",
                     session_id=session_id,
                     tools=tools_arg
                 )

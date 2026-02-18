@@ -70,7 +70,7 @@ from auric.core.config import AURIC_ROOT
 class AuditLogger:
     def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
-            # Default to ~/.auric/auric.db
+            # Default to ./.auric/auric.db
             db_path = AURIC_ROOT / "auric.db"
         
         self.db_path = db_path

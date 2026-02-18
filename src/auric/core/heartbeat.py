@@ -84,7 +84,7 @@ def can_dream() -> bool:
         return False
 
     # Condition 2: Data Availability
-    # Check ~/.auric/logs/current_session.log (assuming standard path)
+    # Check ./.auric/logs/current_session.log (assuming standard path)
     # We can refine this path later if config changes.
     log_path = AURIC_ROOT / "logs" / "current_session.log"
     

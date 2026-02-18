@@ -40,7 +40,7 @@ This roadmap focuses on building a recursive AI agent that manages its own memor
 * **Active Hours Check:** Before executing, check `auric.json` (`agents.defaults.heartbeat.activeHours`). If outside active hours (e.g., 2 AM), skip the heartbeat to respect the user's peace.
 
 * **Instruction Source (`HEARTBEAT.md`):**
-* Auric reads `~/.auric/HEARTBEAT.md`.
+* Auric reads `./.auric/HEARTBEAT.md`.
 * This file contains a checklist of routine tasks (e.g., "Check unread Gmails from 'Boss'," "Verify server status").
 * *Optimization:* If `HEARTBEAT.md` is empty or missing, the heartbeat is skipped entirely to save API costs.
 
@@ -87,7 +87,7 @@ auric config set channels.whatsapp.groups '["*"]' --json
 
 * **[Infrastructure] The Install Script (`install.sh`):**
 * One-line setup for WSL2/Linux.
-* Installs Python 3.11, creates the hidden `~/.auric` directory, creates the `auric.json` config file, and sets up the systemd service.
+* Installs Python 3.11, creates the hidden `./.auric` directory, creates the `auric.json` config file, and sets up the systemd service.
 * Also installs necessary files for the dashboard to work (server, frontend files, etc.) and spins up the webserver on a port defined in the config.
 
 
@@ -117,7 +117,7 @@ auric config set channels.whatsapp.groups '["*"]' --json
 
 **[Feature] The User's Profile (`USER.md`)**
 * **Concept:** A static file containing immutable facts about the user.
-* **File:** Located at `~/.auric/USER.md`.
+* **File:** Located at `./.auric/USER.md`.
 * **Content:** Name, pronouns, timezone/location, preferred coding languages, and bio.
 ```markdown
 # USER.md - About Your Human
@@ -145,7 +145,7 @@ The more you know, the better you can help. But remember — you're learning abo
 
 
 * **[Feature] The Grimoire (Hierarchical Neural File System):**
-* Instead of a simple database, we have a structured, file-centric knowledge base located at `~/.auric/grimoire/`.
+* Instead of a simple database, we have a structured, file-centric knowledge base located at `./.auric/grimoire/`.
 * **Structure:** The Grimoire is divided into three distinct "Planes" of memory:
 1. **The Focus (Scratchpad):** `FOCUS.md`. The agent's "Working Memory." Stores the immediate goal, current step, and active context. *Read/Write: Constant.*
 2. **The Chronicle (Episodic):** `grimoire/chronicles/YYYY-MM-DD.md`. Summarized narratives of past events (not raw logs). *Read: Occasional. Write: Batch.*
@@ -179,7 +179,7 @@ The more you know, the better you can help. But remember — you're learning abo
 
 Don't just store text; store *state*. Use a Markdown structure that the LLM can edit.
 
-* **File Content: `~/.auric/grimoire/FOCUS.md`:**
+* **File Content: `./.auric/grimoire/FOCUS.md`:**
 
 ```markdown
 # 🔮 THE FOCUS (Current State)

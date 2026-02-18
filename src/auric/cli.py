@@ -1,6 +1,7 @@
 import os
 import signal
 import sys
+import asyncio
 import atexit
 import psutil
 import typer
@@ -27,7 +28,14 @@ app.add_typer(config_app, name="config")
 app.add_typer(spells_app, name="spells")
 
 pairing_app = typer.Typer(help="Manage Device/User Pairing")
+pairing_app = typer.Typer(help="Manage Device/User Pairing")
 app.add_typer(pairing_app, name="pairing")
+
+memory_app = typer.Typer(help="Manage Agent Memory")
+app.add_typer(memory_app, name="memory")
+
+focus_app = typer.Typer(help="Manage Agent Focus")
+app.add_typer(focus_app, name="focus")
 
 console = Console()
 
@@ -228,7 +236,7 @@ def spells_create(name: str):
         console.print("[red]Invalid spell name. Use alphanumeric, hyphens, or underscores.[/red]")
         raise typer.Exit(1)
         
-    spells_dir = Path("~/.auric/grimoire/spells").expanduser()
+    spells_dir = Path("./.auric/grimoire/spells").expanduser()
     spell_path = spells_dir / name
     
     if spell_path.exists():
@@ -556,6 +564,78 @@ def pairing_approve(
             
     except Exception as e:
         console.print(f"[red]Error approving request: {e}[/red]")
+
+# --- Memory Commands ---
+
+@memory_app.command("reindex")
+def memory_reindex():
+    """Manually trigger a full re-indexing of the Grimoire and Memories."""
+    from auric.memory.librarian import GrimoireLibrarian
+    
+    async def run_reindex():
+        console.print("[yellow]Initializing Librarian for re-indexing...[/yellow]")
+        # We don't need the observer running, just the reindex method
+        librarian = GrimoireLibrarian() 
+        if not librarian.vector_store:
+             console.print("[red]Vector Store not available. Cannot index.[/red]")
+             return
+             
+        await librarian.start_reindexing()
+        
+    try:
+        asyncio.run(run_reindex())
+    except Exception as e:
+        console.print(f"[red]Re-indexing failed: {e}[/red]")
+
+# --- Focus Commands ---
+
+@focus_app.command("reset")
+def focus_reset(
+    force: bool = typer.Option(False, "--force", "-f", help="Force reset without confirmation")
+):
+    """Reset the FOCUS.md file to its default state."""
+    from auric.memory.focus_manager import FocusManager
+    
+    focus_file = AURIC_ROOT / "memories" / "FOCUS.md"
+    
+    if not force:
+        if focus_file.exists():
+            console.print("[yellow]Warning: This will overwrite the current FOCUS.md with the default template.[/yellow]")
+            console.print(f"Target: {focus_file}")
+            if not typer.confirm("Are you sure you want to reset the focus?"):
+                console.print("[red]Aborted.[/red]")
+                raise typer.Abort()
+    
+    try:
+        manager = FocusManager(focus_file)
+        manager.clear()
+        console.print(f"[green]Focus reset successfully.[/green]")
+        console.print(f"File: {focus_file}")
+    except Exception as e:
+        console.print(f"[red]Failed to reset focus: {e}[/red]")
+
+@focus_app.command("get")
+def focus_get(
+    raw: bool = typer.Option(False, "--raw", help="Print raw markdown instead of rendered")
+):
+    """Print the current focus state."""
+    
+    focus_file = AURIC_ROOT / "memories" / "FOCUS.md"
+    
+    if not focus_file.exists():
+        console.print("[yellow]No focus file found.[/yellow]")
+        return
+
+    try:
+        content = focus_file.read_text(encoding="utf-8")
+        if raw:
+            console.print(content)
+        else:
+            from rich.markdown import Markdown
+            console.print(Markdown(content))
+            
+    except Exception as e:
+        console.print(f"[red]Failed to read focus: {e}[/red]")
 
 if __name__ == "__main__":
     app()

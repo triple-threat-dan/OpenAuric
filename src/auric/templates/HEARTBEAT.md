@@ -17,5 +17,5 @@ Note to Agent: do not track your progress in this file, use the FOCUS.md for tha
   Example: 
   - verify codebase integrity 
   - prune expired memories
-  - Scan `~/.auric/memories/` for new knowledge files to index
+  - Scan `./.auric/memories/` for new knowledge files to index
 -->

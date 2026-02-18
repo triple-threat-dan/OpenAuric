@@ -57,7 +57,11 @@ async def perform_dream_cycle(audit_logger, gateway, config) -> None:
                 # That's hard to parsing text.
                 # Let's just do it. The cleanup step (Step 2) will handle dupes.
                 try:
-                    await audit_logger.summarize_session(last_active_sid, gateway, model=config.agents.fast_model)
+                    # Use heartbeat_model if available, otherwise fallback to fast_model
+                    hb_model = config.agents.models.get("heartbeat_model")
+                    model_to_use = hb_model.model if hb_model else config.agents.models["fast_model"].model
+                    
+                    await audit_logger.summarize_session(last_active_sid, gateway, model=model_to_use)
                 except Exception as e:
                     logger.error(f"Dream Cycle: Failed to summarize session: {e}")
 
@@ -109,9 +113,12 @@ If no updates are needed for a category, return an empty list.
 """
     try:
         messages = [{"role": "user", "content": prompt}]
+        
+        smart_model_id = config.agents.models["smart_model"].model
+        
         response = await gateway.chat_completion(
             messages=messages,
-            tier=config.agents.smart_model,
+            tier="smart_model", # Gateway expects the key in models dict, which is "smart_model"
             response_format={"type": "json_object"}
         )
         

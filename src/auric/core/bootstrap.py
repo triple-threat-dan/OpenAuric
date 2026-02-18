@@ -51,7 +51,7 @@ def ensure_workspace():
                 logger.warning(f"Template {src_rel} missing in {AURIC_TEMPLATES_DIR}")
 
     # Copy Default Spells
-    # Spells are located in src/auric/spells/default -> ~/.auric/grimoire/
+    # Spells are located in src/auric/spells/default -> ./.auric/grimoire/
     # Note: We now flatten the spells structure, so they go directly into grimoire/
     
     # Locate src/auric/spells/default relative to this file

@@ -43,7 +43,7 @@ else {
 
 # --- 2. The Setup ---
 
-Write-Host ">>> Setting up ~/.auric..." -ForegroundColor Cyan
+Write-Host ">>> Setting up ./auric..." -ForegroundColor Cyan
 if (-not (Test-Path $AuricHome)) {
     New-Item -ItemType Directory -Force -Path $AuricHome | Out-Null
 }

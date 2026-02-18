@@ -1,7 +1,7 @@
 """
 Configuration and Secrets Management for OpenAuric.
 
-This module handles loading configuration from disk (~/.auric/auric.json),
+This module handles loading configuration from disk (.auric/auric.json),
 enforcing security permissions, and providing access to secrets.
 """
 
@@ -42,17 +42,29 @@ class AgentDefaults(BaseModel):
     """Default settings for agents."""
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
+class ModelConfig(BaseModel):
+    """Configuration for a specific model."""
+    provider: str
+    model: str
+    enabled: bool = True
+
 class AgentsConfig(BaseModel):
     """Configuration for agents."""
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
     name: str = "Auric"
-    smart_model: str = "gemini/gemini-2.5-pro"
-    fast_model: str = "gemini/gemini-2.5-flash"
     is_local: bool = False
     max_recursion: int = 2
     max_cost: float = 1.0
     max_turns: int = 15
     dream_time: str = "04:00" # 24h format
+    
+    # New Model Config
+    models: Dict[str, ModelConfig] = Field(default_factory=lambda: {
+        "smart_model": ModelConfig(provider="gemini", model="gemini/gemini-2.5-pro"),
+        "fast_model": ModelConfig(provider="gemini", model="gemini/gemini-2.5-flash"),
+        "heartbeat_model": ModelConfig(provider="gemini", model="gemini/gemini-2.5-flash"),
+        "embeddings_model": ModelConfig(provider="auto", model="models/text-embedding-004")
+    })
 
 class GatewayConfig(BaseModel):
     """Configuration for the API gateway."""
@@ -88,6 +100,12 @@ class LLMKeys(BaseModel):
     openrouter: Optional[str] = None
     brave: Optional[str] = None
 
+class EmbeddingsConfig(BaseModel):
+    """Configuration for embedding models."""
+    provider: str = "auto" # auto, openai, gemini, local
+    model: Optional[str] = None
+
+
 class AuricConfig(BaseSettings):
     """
     Root configuration object for OpenAuric.
@@ -97,6 +115,7 @@ class AuricConfig(BaseSettings):
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     pacts: PactsConfig = Field(default_factory=PactsConfig)
+    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     keys: LLMKeys = Field(default_factory=LLMKeys) 
     tools: Dict[str, Any] = Field(default_factory=dict)
 
@@ -171,7 +190,7 @@ class ConfigLoader:
     @classmethod
     def load(cls) -> AuricConfig:
         """
-        Loads the configuration from ~/.auric/auric.json.
+        Loads the configuration from .auric/auric.json (relative to CWD).
         If the file doesn't exist, it creates a default one.
         """
         config_path = cls.get_config_path()
@@ -214,7 +233,10 @@ class ConfigLoader:
             
             # Prepare data
             data = config.model_dump(by_alias=True, mode='json')
-            content = json5.dumps(data, indent=2)
+            import json
+            # Use standard json.dumps to ensure strict JSON (double quotes) which avoids editor warnings.
+            # json5.load above can still read this fine.
+            content = json.dumps(data, indent=2)
 
             # Secure write
             if not config_path.exists():

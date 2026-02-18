@@ -6,10 +6,10 @@ import concurrent.futures
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent, FileMovedEvent
-from sentence_transformers import SentenceTransformer
 
-from auric.core.config import AURIC_ROOT
+from auric.core.config import AURIC_ROOT, load_config
 from .chroma_store import ChromaStore
+from .embeddings import EmbeddingWrapper
 
 logger = logging.getLogger("auric.librarian")
 
@@ -90,11 +90,16 @@ class GrimoireLibrarian:
     Service responsible for monitoring the Grimoire and managing the Vector Store.
     """
 
-    def __init__(self, grimoire_path: Optional[Path] = None):
+    def __init__(self, grimoire_path: Optional[Path] = None, memories_path: Optional[Path] = None):
         if grimoire_path is None:
             self.grimoire_path = AURIC_ROOT / "grimoire"
         else:
             self.grimoire_path = grimoire_path
+            
+        if memories_path is None:
+            self.memories_path = AURIC_ROOT / "memories"
+        else:
+            self.memories_path = memories_path
 
         self.observer: Optional[Observer] = None
         self.event_handler: Optional[GrimoireHandler] = None
@@ -108,13 +113,12 @@ class GrimoireLibrarian:
             logger.warning("Librarian: RAG capabilities will be disabled.")
         
         # Initialize Embedding Model
-        # Using a lightweight model for efficiency
         self.encoder = None
         if self.vector_store:
             try:
-                logger.info("Librarian: Loading embedding model (all-MiniLM-L6-v2)...")
-                self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
-                logger.info("Librarian: Embedding model loaded.")
+                config = load_config()
+                # EmbeddingWrapper handles logging
+                self.encoder = EmbeddingWrapper(config)
             except Exception as e:
                 logger.error(f"Librarian: Failed to load embedding model: {e}")
                 self.vector_store = None # Disable if no encoder
@@ -127,7 +131,11 @@ class GrimoireLibrarian:
             logger.warning(f"Grimoire directory {self.grimoire_path} does not exist. Creating it.")
             self.grimoire_path.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Librarian starting watch on {self.grimoire_path}")
+        if not self.memories_path.exists():
+            logger.warning(f"Memories directory {self.memories_path} does not exist. Creating it.")
+            self.memories_path.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Librarian starting watch on {self.grimoire_path} and {self.memories_path}")
 
         try:
             loop = asyncio.get_running_loop()
@@ -139,6 +147,7 @@ class GrimoireLibrarian:
         
         self.observer = Observer()
         self.observer.schedule(self.event_handler, str(self.grimoire_path), recursive=True)
+        self.observer.schedule(self.event_handler, str(self.memories_path), recursive=True)
         self.observer.start()
         logger.info("Librarian observer started.")
 
@@ -235,7 +244,13 @@ class GrimoireLibrarian:
             return []
 
         try:
-            embedding = self.encoder.encode(query).tolist()
+            # Encoder returns (1, D) array for single string, need flat list (D,)
+            embedding_array = self.encoder.encode(query)
+            if len(embedding_array) > 0:
+                embedding = embedding_array[0].tolist()
+            else:
+                return []
+                
             return self.vector_store.search(embedding, n_results=n_results)
         except Exception as e:
             logger.error(f"Librarian search failed: {e}")
@@ -243,7 +258,7 @@ class GrimoireLibrarian:
 
     async def start_reindexing(self) -> None:
         """
-        Scans and indexes all files in the Grimoire.
+        Scans and indexes all files in the Grimoire and Memories.
         Runs in background to avoid blocking startup.
         """
         logger.info("Librarian: Starting full re-indexing...")
@@ -251,6 +266,8 @@ class GrimoireLibrarian:
         
         # Recursive glob
         files = list(self.grimoire_path.glob("**/*.md"))
+        files.extend(list(self.memories_path.glob("**/*.md")))
+
         logger.info(f"Librarian: Function found {len(files)} files to index.")
         
         for file_path in files:

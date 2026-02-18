@@ -310,6 +310,9 @@ class ToolRegistry:
             The stdout output or error message.
         """
         try:
+            # Normalize path separators for Windows (PowerShell doesn't always like mixed / and \)
+            command = command.replace("/", "\\")
+            
             # We use powershell -Command "..."
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
             

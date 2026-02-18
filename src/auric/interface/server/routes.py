@@ -96,7 +96,9 @@ async def get_status(request: Request):
     config = getattr(request.app.state, "config", None)
     active_model = "Local (Default)"
     if config:
-        active_model = config.agents.smart_model
+        model_config = config.agents.models.get("smart_model")
+        if model_config:
+            active_model = f"{model_config.provider}/{model_config.model}"
 
     stats = {
         "status": "ONLINE",
