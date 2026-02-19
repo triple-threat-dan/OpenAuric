@@ -399,9 +399,14 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          context_key = f"{platform}:{sender_id}"
                          session_id = session_router.get_active_session_id(context_key)
                          
+                         # If session_id is None, the context was explicitly closed.
+                         # Create a brand new session (never reactivate a closed one).
+                         if session_id is None:
+                             logger.info(f"Context '{context_key}' was closed. Creating fresh session.")
+                             session_id = session_router.start_new_session(context_key)
+                         
                          # Ensure Session Exists in DB (metadata update)
                          if api_app.state.audit_logger:
-                             # Check if exists (optimization: cache locally? for now DB check is fine)
                              existing = await api_app.state.audit_logger.get_session(session_id)
                              if not existing:
                                  # Generate Name

@@ -118,14 +118,31 @@ async def get_status(request: Request):
         current_session_id=getattr(request.app.state, "current_session_id", None)
     )
 
-@router.get("/api/sessions", response_model=List[SessionSummary])
+@router.get("/api/sessions")
 async def get_sessions(request: Request):
-    """Returns a list of all chat sessions."""
+    """Returns a list of all chat sessions with active/inactive status."""
     audit_logger = getattr(request.app.state, "audit_logger", None)
     if not audit_logger:
         return []
     try:
         sessions = await audit_logger.get_sessions()
+        
+        # Cross-reference with SessionRouter to determine active status
+        session_router = getattr(request.app.state, "session_router", None)
+        current_web_sid = getattr(request.app.state, "current_session_id", None)
+        active_sids = set()
+        
+        if session_router:
+            active_sids = session_router.get_all_active_session_ids()
+        
+        # Also include the current web session as active
+        if current_web_sid:
+            active_sids.add(current_web_sid)
+        
+        # Add is_active flag to each session
+        for sess in sessions:
+            sess["is_active"] = sess["session_id"] in active_sids
+        
         return sessions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -208,20 +225,75 @@ async def new_session(request: Request, body: NewSessionRequest = None):
 async def close_all_sessions(request: Request):
     """
     Closes ALL active sessions (Nuclear Option).
+    Triggers summarization for each session before closing.
     """
     session_router = getattr(request.app.state, "session_router", None)
-    if session_router:
-        session_router.close_all_sessions()
-        return {"status": "All sessions closed"}
-    return {"status": "error", "message": "SessionRouter not available"}
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    gateway = getattr(request.app.state, "gateway", None)
+    
+    if not session_router:
+        return {"status": "error", "message": "SessionRouter not available"}
+    
+    # Get all sessions before closing (returns list of (context, session_id))
+    closed_pairs = session_router.close_all_sessions()
+    
+    # Also handle the web session
+    web_sid = getattr(request.app.state, "current_session_id", None)
+    
+    # Summarize each closed session
+    summarized = 0
+    if audit_logger and gateway:
+        for context, sid in closed_pairs:
+            try:
+                await audit_logger.summarize_session(sid, gateway)
+                summarized += 1
+            except Exception as e:
+                import logging
+                logging.getLogger("auric.routes").error(f"Failed to summarize session {sid}: {e}")
+        
+        # Summarize web session if it wasn't in the router
+        if web_sid and web_sid not in [sid for _, sid in closed_pairs]:
+            try:
+                await audit_logger.summarize_session(web_sid, gateway)
+                summarized += 1
+            except Exception:
+                pass
+    
+    # Rotate web session
+    from uuid import uuid4
+    new_web_sid = str(uuid4())
+    request.app.state.current_session_id = new_web_sid
+    
+    # Clear in-memory history and focus
+    chat_history = getattr(request.app.state, "web_chat_history", None)
+    if chat_history is not None:
+        chat_history.clear()
+    focus_manager = getattr(request.app.state, "focus_manager", None)
+    if focus_manager:
+        focus_manager.clear()
+    
+    return {"status": "All sessions closed", "summarized": summarized, "closed_count": len(closed_pairs)}
 
 @router.post("/api/sessions/{session_id}/close")
 async def close_session(request: Request, session_id: str):
     """
     Closes a specific session if it is active.
-    This effectively just means removing it from the active map so a new one is generated next time.
+    Triggers summarization before closing to preserve the summary log.
+    Marks the context as closed so the session cannot be zombied.
     """
     session_router = getattr(request.app.state, "session_router", None)
+    audit_logger = getattr(request.app.state, "audit_logger", None)
+    gateway = getattr(request.app.state, "gateway", None)
+    
+    # Helper: summarize if possible
+    async def _summarize(sid):
+        if audit_logger and gateway and sid:
+            try:
+                await audit_logger.summarize_session(sid, gateway)
+            except Exception as e:
+                import logging
+                logging.getLogger("auric.routes").error(f"Failed to summarize session {sid}: {e}")
+    
     if session_router:
         # Find context for this session_id
         active_map = session_router.list_active_contexts()
@@ -232,17 +304,29 @@ async def close_session(request: Request, session_id: str):
                 break
         
         if found_context:
+            # Summarize BEFORE closing
+            await _summarize(session_id)
             session_router.close_session(found_context)
-            return {"status": "Session closed", "context": found_context}
-        else:
-             # Might be the web session?
-             current_web_sid = getattr(request.app.state, "current_session_id", None)
-             if current_web_sid == session_id:
-                 # "Closing" web session just means generating a new one
-                 new_id = str(uuid4())
-                 request.app.state.current_session_id = new_id
-                 return {"status": "Web session closed/rotated"}
-                 
+            return {"status": "Session closed and summarized", "context": found_context}
+    
+    # Check if it's the web session
+    current_web_sid = getattr(request.app.state, "current_session_id", None)
+    if current_web_sid == session_id:
+        # Summarize the web session before rotating
+        await _summarize(session_id)
+        new_id = str(uuid4())
+        request.app.state.current_session_id = new_id
+        
+        # Clear in-memory history and focus
+        chat_history = getattr(request.app.state, "web_chat_history", None)
+        if chat_history is not None:
+            chat_history.clear()
+        focus_manager = getattr(request.app.state, "focus_manager", None)
+        if focus_manager:
+            focus_manager.clear()
+        
+        return {"status": "Web session closed, summarized, and rotated", "new_session_id": new_id}
+    
     return {"status": "Session not found or not active"}
 
 @router.post("/api/sessions/{session_id}/rename")

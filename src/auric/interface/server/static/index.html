@@ -411,10 +411,11 @@
                     const isActive = activeSessionId === sess.session_id;
                     const date = sess.last_active ? new Date(sess.last_active).toLocaleString() : 'Unknown';
                     const displayName = sess.name || sess.session_id;
+                    const statusBadge = sess.is_active ? '<span class="session-badge active-badge">🟢 Active</span>' : '<span class="session-badge archived-badge">📦 Archived</span>';
                     return `
                     <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${sess.session_id}')">
                         <div class="session-content">
-                            <div class="session-id">${displayName}</div>
+                            <div class="session-id">${displayName} ${statusBadge}</div>
                             <div class="session-meta">
                                 <span>${date}</span>
                                 <span>${sess.message_count} msgs</span>

@@ -663,26 +663,33 @@ def focus_get(
 
 @sessions_app.command("list")
 def sessions_list():
-    """List all active sessions (Context -> SessionID)."""
+    """List all active sessions and closed contexts."""
     from auric.core.session_router import SessionRouter
     
     try:
         router = SessionRouter()
         active = router.list_active_contexts()
         
-        if not active:
-            console.print("[yellow]No active sessions found.[/yellow]")
+        if not active and not router._closed_contexts:
+            console.print("[yellow]No sessions found.[/yellow]")
             return
-            
-        console.print(f"[bold green]Found {len(active)} active sessions:[/bold green]")
-        table = Table(show_header=True, header_style="bold magenta")
-        table.add_column("Context")
-        table.add_column("Session ID")
         
-        for context, sid in active.items():
-            table.add_row(context, sid)
+        if active:
+            console.print(f"[bold green]Active Sessions ({len(active)}):[/bold green]")
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Context")
+            table.add_column("Session ID")
+            table.add_column("Status")
             
-        console.print(table)
+            for context, sid in active.items():
+                table.add_row(context, sid, "🟢 Active")
+                
+            console.print(table)
+        
+        if router._closed_contexts:
+            console.print(f"\n[yellow]Closed Contexts ({len(router._closed_contexts)}):[/yellow]")
+            for ctx in router._closed_contexts:
+                console.print(f"  📦 {ctx}")
         
     except Exception as e:
         console.print(f"[red]Error listing sessions: {e}[/red]")
@@ -697,8 +704,10 @@ def sessions_closeall():
         
     try:
         router = SessionRouter()
-        router.close_all_sessions()
-        console.print("[bold green]All sessions closed.[/bold green]")
+        closed_pairs = router.close_all_sessions()
+        console.print(f"[bold green]Closed {len(closed_pairs)} sessions.[/bold green]")
+        for ctx, sid in closed_pairs:
+            console.print(f"  📦 {ctx}: {sid}")
     except Exception as e:
         console.print(f"[red]Error closing sessions: {e}[/red]")
 

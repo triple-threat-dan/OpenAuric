@@ -680,3 +680,26 @@ button:hover {
 .nav-btn .icon {
     font-size: 1.2rem;
 }
+
+/* Session Status Badges */
+.session-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: normal;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+.active-badge {
+    color: var(--accent-color);
+    background: rgba(10, 189, 199, 0.1);
+    border: 1px solid rgba(10, 189, 199, 0.3);
+}
+
+.archived-badge {
+    color: var(--muted-text);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+}

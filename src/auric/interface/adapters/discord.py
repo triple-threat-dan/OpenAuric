@@ -202,12 +202,17 @@ class DiscordPact(BasePact):
     async def trigger_new_session(self, target_id: str) -> None:
         """
         Triggers a new session via the local API.
+        Passes the correct discord context key so the SessionRouter
+        rotates the right session (not the web session).
         """
         import aiohttp
         try:
             url = f"http://127.0.0.1:{self.api_port}/api/sessions/new"
+            # Pass the correct context key: discord:<channel_id>
+            context_key = f"discord:{target_id}"
+            payload = {"context": context_key}
             async with aiohttp.ClientSession() as session:
-                async with session.post(url) as resp:
+                async with session.post(url, json=payload) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         new_sid = data.get("session_id")
