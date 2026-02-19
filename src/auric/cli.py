@@ -370,7 +370,7 @@ def spells_reload():
     # 1. Update local index
     try:
         config = load_config()
-        registry = ToolRegistry(config) # Re-scans and updates SPELLS.md
+        registry = ToolRegistry(config)
         console.print(f"[green]Local index updated. Found {len(registry._spells)} spells.[/green]")
     except Exception as e:
         console.print(f"[yellow]Warning: Could not update local index: {e}[/yellow]")

@@ -28,7 +28,6 @@ def ensure_workspace():
         "HEARTBEAT.md": "HEARTBEAT.md",
         "SOUL.md": "SOUL.md",
         "USER.md": "USER.md",
-        "grimoire/SPELLS.md": "grimoire/SPELLS.md",
         "memories/FOCUS.md": "memories/FOCUS.md",
         "memories/MEMORY.md": "memories/MEMORY.md"
     }
