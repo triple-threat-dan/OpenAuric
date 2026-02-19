@@ -1,76 +1,66 @@
 """
 The Chronicles & Dream Cycle.
 
-This module will contain the logic for the "Dream Cycle" - the agent's sleep phase
-where it summarizes daily logs into long-term memory (Chonicles).
+This module contains the logic for the "Dream Cycle" — the agent's sleep phase
+where it summarizes daily logs into long-term memory (Chronicles).
 """
 
-
+import html
+import json
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
-import asyncio
 
 import aiofiles
 from auric.core.config import AURIC_ROOT
 
 logger = logging.getLogger("auric.memory.chronicles")
 
+
+async def _append_to_file(path, content: str) -> bool:
+    """Appends content to a file if it exists. Returns True on success."""
+    if not path.exists():
+        logger.warning(f"{path.name} not found, skipping updates.")
+        return False
+    async with aiofiles.open(path, mode='a', encoding='utf-8') as f:
+        await f.write(content)
+    return True
+
+
+def _unescape_list(items: list[str]) -> list[str]:
+    """Unescape HTML entities from a list of strings."""
+    return [html.unescape(s) for s in items]
+
+
 async def perform_dream_cycle(audit_logger, gateway, config) -> None:
     """
-    Executes the "Dream Cycle" - the agent's sleep phase.
-    
-    1. Checks if current session is inactive (>5m) and summarizes it if needed.
-    2. Reads the daily memory log (YYYY-MM-DD.md).
-    3. Uses LLM to clean up, format, and extract long-term lessons.
-    4. Updates MEMORY.md or USER.md with extracted lessons.
+    Executes the Dream Cycle — the agent's sleep phase.
+
+    1. Summarizes the last active session if idle > 5 min.
+    2. Reads and processes the daily log (YYYY-MM-DD.md).
+    3. Extracts updates for MEMORY.md, USER.md, and HEARTBEAT.md.
+    4. Optionally generates a creative dream story (DREAMS.md).
     """
     logger.info("Dream Cycle: Initiating...")
-    
-    # --- Step 1: Session Check & Summarization ---
-    # We want to summarize the *current* session if it's been inactive.
-    # The new_session endpoint handles summarization when *switching*, 
-    # but if the agent is just left running, we want to capture that state.
 
-    current_sid = None
-    # We need to access the current session ID. 
-    # In daemon.py, it's stored in api_app.state.current_session_id.
-    # But here we only have audit_logger, gateway, config.
-    # We can ask audit_logger for the last active session ID.
-    
+    # --- Step 1: Summarize idle session ---
     last_active_sid = await audit_logger.get_last_active_session_id()
     if last_active_sid:
-        # Check last message time
         history = await audit_logger.get_chat_history(limit=1, session_id=last_active_sid)
-        if history:
-            last_msg_time = history[0].timestamp
-            now = datetime.now()
-            if (now - last_msg_time) > timedelta(minutes=5):
-                logger.info(f"Dream Cycle: Session {last_active_sid} inactive for >5m. Triggering summary.")
-                # Summarize session
-                # Note: summarize_session appends to daily log.
-                # We should potentially check if it was already summarized to avoid dupes?
-                # For now, relying on the fact that summarize_session is idempotent-ish 
-                # (it just appends notes).
-                
-                # Check if we recently summarized this session in the daily log?
-                # That's hard to parsing text.
-                # Let's just do it. The cleanup step (Step 2) will handle dupes.
-                try:
-                    # Use heartbeat_model if available, otherwise fallback to fast_model
-                    hb_model = config.agents.models.get("heartbeat_model")
-                    model_to_use = hb_model.model if hb_model else config.agents.models["fast_model"].model
-                    
-                    await audit_logger.summarize_session(last_active_sid, gateway, model=model_to_use)
-                except Exception as e:
-                    logger.error(f"Dream Cycle: Failed to summarize session: {e}")
+        if history and (datetime.now() - history[0].timestamp) > timedelta(minutes=5):
+            logger.info(f"Dream Cycle: Session {last_active_sid} inactive >5m. Summarizing.")
+            try:
+                hb_model = config.agents.models.get("heartbeat_model")
+                model = hb_model.model if hb_model else config.agents.models["fast_model"].model
+                await audit_logger.summarize_session(last_active_sid, gateway, model=model)
+            except Exception as e:
+                logger.error(f"Dream Cycle: Failed to summarize session: {e}")
 
-    # --- Step 2: Daily Log Processing ---
+    # --- Step 2: Process daily log ---
     today = datetime.now().strftime("%Y-%m-%d")
     daily_log_path = AURIC_ROOT / "memories" / f"{today}.md"
-    
+
     if not daily_log_path.exists():
-        logger.info("Dream Cycle: No daily log found. Skipping cleanup.")
+        logger.info("Dream Cycle: No daily log found. Skipping.")
         return
 
     async with aiofiles.open(daily_log_path, mode='r', encoding='utf-8') as f:
@@ -81,8 +71,7 @@ async def perform_dream_cycle(audit_logger, gateway, config) -> None:
         return
 
     logger.info("Dream Cycle: Processing daily log for insights...")
-    
-    # Prompt LLM to clean and extract
+
     prompt = f"""
 You are performing the "Dream Cycle" for the AI Agent.
 Your goal is to process the daily memory log, clean it up, and extract long-term lessons.
@@ -116,75 +105,87 @@ OUTPUT FORMAT (JSON):
 If no updates are needed for a category, return an empty list.
 """
     try:
-        messages = [{"role": "user", "content": prompt}]
-        
-        smart_model_id = config.agents.models["smart_model"].model
-        
         response = await gateway.chat_completion(
-            messages=messages,
-            tier="smart_model", # Gateway expects the key in models dict, which is "smart_model"
+            messages=[{"role": "user", "content": prompt}],
+            tier="smart_model",
             response_format={"type": "json_object"}
         )
-        
-        result_json = response.choices[0].message.content
-        import json
-        import html
-        data = json.loads(result_json)
-        
+
+        data = json.loads(response.choices[0].message.content)
+
         cleaned_log = html.unescape(data.get("cleaned_daily_log", ""))
-        memory_updates = [html.unescape(u) for u in data.get("memory_updates", [])]
-        user_updates = [html.unescape(u) for u in data.get("user_updates", [])]
-        heartbeat_updates = [html.unescape(u) for u in data.get("heartbeat_updates", [])]
-        
-        # --- Step 3: Apply Updates ---
-        
-        # 1. Overwrite Daily Log with Cleaned Version
+        memory_updates = _unescape_list(data.get("memory_updates", []))
+        user_updates = _unescape_list(data.get("user_updates", []))
+        heartbeat_updates = _unescape_list(data.get("heartbeat_updates", []))
+
+        # --- Step 3: Apply updates ---
+
+        # 3a. Overwrite daily log with cleaned version
         if cleaned_log:
             async with aiofiles.open(daily_log_path, mode='w', encoding='utf-8') as f:
-                await f.write(cleaned_log)
-                await f.write("\n\n**Dream Cycle Complete.**")
-        
-        # 2. Append to MEMORY.md
+                await f.write(f"{cleaned_log}\n\n**Dream Cycle Complete.**")
+
+        # 3b. Append to MEMORY.md (staging section for agent to review & merge)
         if memory_updates:
-            memory_path = AURIC_ROOT / "memories" / "MEMORY.md"
-            if memory_path.exists():
-                async with aiofiles.open(memory_path, mode='a', encoding='utf-8') as f:
-                    await f.write(f"\n\n### Learned on {today}\n")
-                    for update in memory_updates:
-                        await f.write(f"- {update}\n")
-            else:
-                 logger.warning("MEMORY.md not found, skipping updates.")
+            lines = [f"\n\n## Dream Cycle Notes ({today})\n"]
+            lines.append("_Review and merge these into the sections above (Facts, Lessons Learned, People, etc.), then delete this section._\n")
+            lines.extend(f"- {u}\n" for u in memory_updates)
+            await _append_to_file(AURIC_ROOT / "memories" / "MEMORY.md", "".join(lines))
 
-        # 3. Append to USER.md
-        # NOTE: We append under a stable "## Dream Cycle Notes" section rather than
-        # dated headers like "### Updated on YYYY-MM-DD" to avoid polluting the
-        # user profile with log-style entries. These notes should be manually
-        # reviewed and merged into the profile sections by the agent during conversation.
+        # 3c. Append to USER.md (staging section for agent to review & merge)
         if user_updates:
-            user_path = AURIC_ROOT / "USER.md"
-            if user_path.exists():
-                async with aiofiles.open(user_path, mode='a', encoding='utf-8') as f:
-                    await f.write(f"\n\n## Dream Cycle Notes ({today})\n")
-                    await f.write("_Review and merge these into the profile above, then delete this section._\n")
-                    for update in user_updates:
-                        await f.write(f"- {update}\n")
-            else:
-                 logger.warning("USER.md not found, skipping updates.")
+            lines = [f"\n\n## Dream Cycle Notes ({today})\n"]
+            lines.append("_Review and merge these into the profile above, then delete this section._\n")
+            lines.extend(f"- {u}\n" for u in user_updates)
+            await _append_to_file(AURIC_ROOT / "USER.md", "".join(lines))
 
-        # 4. Append to HEARTBEAT.md (reminders/tasks extracted from daily log)
+        # 3d. Append to HEARTBEAT.md (reminders/tasks extracted from daily log)
         if heartbeat_updates:
-            heartbeat_path = AURIC_ROOT / "HEARTBEAT.md"
-            if heartbeat_path.exists():
-                async with aiofiles.open(heartbeat_path, mode='a', encoding='utf-8') as f:
-                    await f.write(f"\n### Extracted from daily log ({today})\n")
-                    for update in heartbeat_updates:
-                        await f.write(f"  - {update}\n")
+            lines = [f"\n### Extracted from daily log ({today})\n"]
+            lines.extend(f"  - {u}\n" for u in heartbeat_updates)
+            if await _append_to_file(AURIC_ROOT / "HEARTBEAT.md", "".join(lines)):
                 logger.info(f"Dream Cycle: Wrote {len(heartbeat_updates)} reminders/tasks to HEARTBEAT.md")
-            else:
-                logger.warning("HEARTBEAT.md not found, skipping heartbeat updates.")
 
-        logger.info(f"Dream Cycle: Completed. {len(memory_updates)} memory updates, {len(user_updates)} user updates, {len(heartbeat_updates)} heartbeat updates.")
+        logger.info(
+            f"Dream Cycle: Completed. "
+            f"{len(memory_updates)} memory, {len(user_updates)} user, {len(heartbeat_updates)} heartbeat updates."
+        )
+
+        # --- Step 4: Generate dream story (optional) ---
+        if not config.agents.enable_dream_stories:
+            logger.info("Dream Cycle: Dream stories disabled. Skipping.")
+        else:
+            try:
+                dream_prompt = f"""
+You are an AI agent who just fell asleep after a long day. Based on the following daily log, write a SHORT (3-6 sentences) but vivid, surreal, and wildly exaggerated dream story.
+
+The dream should loosely reference real events from the day but twist them into absurd, fantastical scenarios. Be creative, funny, and weird. Write in first person as the agent dreaming.
+
+Today's log:
+---
+{content}
+---
+
+Write ONLY the dream story, nothing else. No headers, no metadata.
+"""
+                dream_response = await gateway.chat_completion(
+                    messages=[{"role": "user", "content": dream_prompt}],
+                    tier="fast_model",
+                    temperature=0.9
+                )
+                dream_story = dream_response.choices[0].message.content.strip()
+
+                if dream_story:
+                    dreams_path = AURIC_ROOT / "memories" / "DREAMS.md"
+                    if not dreams_path.exists():
+                        async with aiofiles.open(dreams_path, mode='w', encoding='utf-8') as f:
+                            await f.write("# 💤 Dream Journal\n\n")
+
+                    await _append_to_file(dreams_path, f"## {today}\n{dream_story}\n\n---\n\n")
+                    logger.info("Dream Cycle: Dream story recorded to DREAMS.md 💤")
+
+            except Exception as dream_err:
+                logger.warning(f"Dream Cycle: Dream story failed (non-critical): {dream_err}")
 
     except Exception as e:
         logger.error(f"Dream Cycle: Error during processing: {e}")
-

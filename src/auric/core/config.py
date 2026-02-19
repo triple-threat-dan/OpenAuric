@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 import json5
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 # Constants
@@ -65,6 +65,7 @@ class AgentsConfig(BaseModel):
     max_cost: float = 1.0
     max_turns: int = 15
     dream_time: str = "04:00" # 24h format
+    enable_dream_stories: bool = True # Generate creative dream stories after each dream cycle
     
     # New Model Config
     models: Dict[str, ModelConfig] = Field(default_factory=lambda: {
@@ -129,9 +130,7 @@ class AuricConfig(BaseSettings):
     keys: LLMKeys = Field(default_factory=LLMKeys) 
     tools: Dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        strict = True
-        populate_by_name = True
+    model_config = ConfigDict(strict=True, populate_by_name=True)
 
 # ==============================================================================
 # Configuration Loader
