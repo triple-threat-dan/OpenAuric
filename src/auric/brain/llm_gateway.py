@@ -179,5 +179,71 @@ class LLMGateway:
             return response
                 
         except Exception as e:
+            # Handle MALFORMED_FUNCTION_CALL from Gemini via OpenRouter.
+            # The LLM returns finish_reason='error' which litellm can't parse,
+            # but the response body often contains usable text content.
+            error_str = str(e)
+            if "MALFORMED_FUNCTION_CALL" in error_str or ("finish_reason" in error_str and "'error'" in error_str):
+                logger.warning(f"LLM returned malformed function call ({model}). Attempting content recovery.")
+                
+                # Try to extract content from the error's embedded response
+                recovered_content = self._recover_content_from_error(error_str)
+                if recovered_content:
+                    logger.info(f"Recovered content from malformed response: {recovered_content[:80]}...")
+                    # Build a minimal synthetic response
+                    return self._build_synthetic_response(recovered_content, model)
+                    
+                logger.warning(f"Could not recover content. Returning fallback.")
+                return self._build_synthetic_response(
+                    "I encountered a temporary issue with the AI provider. Please try again.", 
+                    model
+                )
+            
             logger.error(f"LLM Gateway Error ({model}): {e}")
             raise
+
+    @staticmethod
+    def _recover_content_from_error(error_str: str) -> Optional[str]:
+        """
+        Attempts to extract usable text content from a litellm error that contains
+        the raw OpenRouter response (e.g. MALFORMED_FUNCTION_CALL errors).
+        """
+        import re
+        import json
+        
+        # The error message embeds the raw response JSON. Try to find the content field.
+        # Pattern: 'content': 'some text here'
+        match = re.search(r"'content':\s*'([^']+)'", error_str)
+        if match:
+            content = match.group(1).strip()
+            if content and content not in ('', 'None', 'null'):
+                return content
+        
+        # Also try double-quoted JSON pattern 
+        match = re.search(r'"content":\s*"([^"]+)"', error_str)
+        if match:
+            content = match.group(1).strip()
+            if content and content not in ('', 'None', 'null'):
+                return content
+                
+        return None
+
+    @staticmethod
+    def _build_synthetic_response(content: str, model: str):
+        """
+        Builds a minimal litellm-compatible response object for recovered content.
+        """
+        from litellm import ModelResponse
+        from litellm.types.utils import Choices, Message, Usage
+        import uuid
+        
+        return ModelResponse(
+            id=f"chatcmpl-recovered-{uuid.uuid4().hex[:12]}",
+            model=model,
+            choices=[Choices(
+                finish_reason="stop",
+                index=0,
+                message=Message(content=content, role="assistant")
+            )],
+            usage=Usage(completion_tokens=0, prompt_tokens=0, total_tokens=0)
+        )
