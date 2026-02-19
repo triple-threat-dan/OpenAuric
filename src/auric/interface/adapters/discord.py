@@ -64,6 +64,28 @@ class AuricDiscordClient(discord.Client):
             # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
             return
 
+        # 5. Bot Loop Prevention
+        # If the sender is a bot, check if we are in a loop
+        if message.author.bot:
+             if await self._is_bot_loop(message.channel, limit=self.pact.bot_loop_limit):
+                 logger.warning(f"Bot Loop Detected in {message.channel}. Stopping response to {message.author.name}.")
+                 return
+
+    async def _is_bot_loop(self, channel, limit: int = 4) -> bool:
+        """
+        Check if the last `limit` messages are all from bots (including self).
+        """
+        try:
+            # We need to include the current message in history check or just check history
+            # .history(limit=N) returns newest first
+            async for msg in channel.history(limit=limit):
+                if not msg.author.bot:
+                    return False # Found a human, chain broken
+            return True # All recent messages are bots
+        except Exception as e:
+            logger.error(f"Failed to check bot loop: {e}")
+            return False
+
         # Whitelist Checks / Pairing Authentication
         from auric.core.pairing import PairingManager
         pairing_mgr = PairingManager()
@@ -164,13 +186,14 @@ class AuricDiscordClient(discord.Client):
 
 
 class DiscordPact(BasePact):
-    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric", api_port: int = 8000):
+    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric", api_port: int = 8000, bot_loop_limit: int = 4):
         super().__init__()
         self.token = token
         self.allowed_channels = allowed_channels
         self.allowed_users = allowed_users
         self.agent_name = agent_name
         self.api_port = api_port
+        self.bot_loop_limit = bot_loop_limit
         self.client: Optional[AuricDiscordClient] = None
         self._task: Optional[asyncio.Task] = None
 

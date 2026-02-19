@@ -15,23 +15,23 @@ Current issues:
 - [ ] emotionsss. small model, runs every prompt or task, a global json state of the emotions, a method to inject that state into the system prompt for each call to the LLM
 - [ ] have the heartbeat logic update the emotional state too (gradually calm the agent)
 - [ ] I am not sure that heartbeats are working. Let's add a table called heartbeats to the database and log them there. Let's also add an auric heartbeat command so you can manually trigger one from the cli.
-- [ ] Daily memories aren't implemented? And need to be... `yyyy-mm-dd.md`, should be saved when important events happen. Perhaps after every interaction a small model is loaded up to summarize recent events and pick important bits to append to the file
-- [ ] allow multiple discord users to talk to aliss by having the user messages be prepended with the name of the sender so she knows which user(s) she's talking to
+- [x] Daily memories aren't implemented? And need to be... `yyyy-mm-dd.md`, should be saved when important events happen. Perhaps after every interaction a small model is loaded up to summarize recent events and pick important bits to append to the file
+- [x] allow multiple discord users to talk to aliss by having the user messages be prepended with the name of the sender so she knows which user(s) she's talking to
 - [ ] a re-runnable onboarding process via the cli that allows users to set tokens, select pacts, set the name of the agent, etc. 
-- [ ] actual vector db for long term memories
-- [ ] add support for searching/googling (Brave integration)
+- [x] actual vector db for long term memories
+- [x] add support for searching/googling (Brave integration)
 - [x] give the agent the ability to make new spells and save them
-- [ ] previous session should load when the user opens the app instead of a new session automatically
+- [x] previous session should load when the user opens the app instead of a new session automatically
 - [ ] support sending images to the agent
 - [ ] support sending multilines in the chatbox
 - [ ] auric -m "send a message from the CLI"
-- [ ] I think auric might have problems with the workspace, perhaps move workspace and install dir to a subfolder in the app directory
+- [x] I think auric might have problems with the workspace, perhaps move workspace and install dir to a subfolder in the app directory
 - [ ] fix it so I don't have to do python -m auric.cli anymore and can just do auric <command>
 - [ ] look into auric status
-- [ ] add support for asking the agent to remember something, having it write to its memories, etc.
+- [x] add support for asking the agent to remember something, having it write to its memories, etc.
 - [ ] add support for receiving images from the agent
 - [ ] add support for sending files to the agent
-- [ ] add support for receivi ng files from the agent
-- [ ] SECURITY. Add token for the frontend ui.
-- [ ] SECURITY. Add pairing for discord integration.
+- [ ] add support for receiving files from the agent
+- [x] SECURITY. Add token for the frontend ui.
+- [x] SECURITY. Add pairing for discord integration.
 - [ ] add support for specialist agents/models for the rlm to call. 

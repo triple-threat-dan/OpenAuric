@@ -40,7 +40,8 @@ class PactManager:
                 allowed_channels=self.config.pacts.discord.allowed_channels,
                 allowed_users=self.config.pacts.discord.allowed_users,
                 agent_name=self.config.agents.name,
-                api_port=self.config.gateway.port
+                api_port=self.config.gateway.port,
+                bot_loop_limit=self.config.pacts.discord.bot_loop_limit
             )
             discord.on_message(self.handle_message)
             self.adapters["discord"] = discord

@@ -86,6 +86,7 @@ class DiscordConfig(BaseModel):
     token: Optional[str] = None
     allowed_channels: List[str] = Field(default_factory=list)
     allowed_users: List[str] = Field(default_factory=list)
+    bot_loop_limit: int = 4
 
 class PactsConfig(BaseModel):
     """Configuration for platform adapters."""
