@@ -92,10 +92,13 @@ CONTEXT:
  Some info might be duplicated or irrelevant.
 
 TASK:
-1. **Clean Log**: Create a consolidated, clean version of the daily log. Remove duplicates, fix formatting.
+1. **Clean Log**: Create a consolidated, clean version of the daily log. Remove duplicates, fix formatting. Remove any reminders/tasks/alarms from the log (they will be extracted separately).
 2. **Extract Lessons**: Identify any critical information that should be stored in long-term memory (MEMORY.md) or user profiles (USER.md).
    - Lessons: general knowledge, world state, important facts.
    - User Info: preferences, names, specific user details.
+3. **Extract Reminders/Tasks**: Identify any reminders, alarms, scheduled tasks, or to-do items that should be in HEARTBEAT.md.
+   - These are things like "remind user to do X at Y time" or "check on Z tomorrow".
+   - Do NOT include completed tasks — only pending/future ones.
 
 INPUT LOG:
 ---
@@ -106,7 +109,8 @@ OUTPUT FORMAT (JSON):
 {{
     "cleaned_daily_log": "...",
     "memory_updates": ["lesson 1", "lesson 2"],
-    "user_updates": ["preference 1", "fact 2"]
+    "user_updates": ["preference 1", "fact 2"],
+    "heartbeat_updates": ["reminder 1", "scheduled task 2"]
 }}
 
 If no updates are needed for a category, return an empty list.
@@ -130,6 +134,7 @@ If no updates are needed for a category, return an empty list.
         cleaned_log = html.unescape(data.get("cleaned_daily_log", ""))
         memory_updates = [html.unescape(u) for u in data.get("memory_updates", [])]
         user_updates = [html.unescape(u) for u in data.get("user_updates", [])]
+        heartbeat_updates = [html.unescape(u) for u in data.get("heartbeat_updates", [])]
         
         # --- Step 3: Apply Updates ---
         
@@ -151,17 +156,34 @@ If no updates are needed for a category, return an empty list.
                  logger.warning("MEMORY.md not found, skipping updates.")
 
         # 3. Append to USER.md
+        # NOTE: We append under a stable "## Dream Cycle Notes" section rather than
+        # dated headers like "### Updated on YYYY-MM-DD" to avoid polluting the
+        # user profile with log-style entries. These notes should be manually
+        # reviewed and merged into the profile sections by the agent during conversation.
         if user_updates:
             user_path = AURIC_ROOT / "USER.md"
             if user_path.exists():
                 async with aiofiles.open(user_path, mode='a', encoding='utf-8') as f:
-                    await f.write(f"\n\n### Updated on {today}\n")
+                    await f.write(f"\n\n## Dream Cycle Notes ({today})\n")
+                    await f.write("_Review and merge these into the profile above, then delete this section._\n")
                     for update in user_updates:
                         await f.write(f"- {update}\n")
             else:
                  logger.warning("USER.md not found, skipping updates.")
 
-        logger.info(f"Dream Cycle: Completed. {len(memory_updates)} memory updates, {len(user_updates)} user updates.")
+        # 4. Append to HEARTBEAT.md (reminders/tasks extracted from daily log)
+        if heartbeat_updates:
+            heartbeat_path = AURIC_ROOT / "HEARTBEAT.md"
+            if heartbeat_path.exists():
+                async with aiofiles.open(heartbeat_path, mode='a', encoding='utf-8') as f:
+                    await f.write(f"\n### Extracted from daily log ({today})\n")
+                    for update in heartbeat_updates:
+                        await f.write(f"  - {update}\n")
+                logger.info(f"Dream Cycle: Wrote {len(heartbeat_updates)} reminders/tasks to HEARTBEAT.md")
+            else:
+                logger.warning("HEARTBEAT.md not found, skipping heartbeat updates.")
+
+        logger.info(f"Dream Cycle: Completed. {len(memory_updates)} memory updates, {len(user_updates)} user updates, {len(heartbeat_updates)} heartbeat updates.")
 
     except Exception as e:
         logger.error(f"Dream Cycle: Error during processing: {e}")

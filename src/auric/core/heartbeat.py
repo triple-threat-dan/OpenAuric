@@ -207,7 +207,12 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
                 prompt = (
                     "🔴 **SYSTEM HEARTBEAT TRIGGERED**\n\n"
                     f"The system heartbeat has activated. Please review your `HEARTBEAT.md` checklist below (located at `{heartbeat_path_str}`) and perform any pending tasks.\n\n"
+                    "**IMPORTANT RULES:**\n"
+                    "- If a user asks you to remind them of something, add it to `HEARTBEAT.md` — NOT to MEMORY.md, daily logs, or any other file.\n"
+                    "- After completing a one-time reminder, remove it from the `One-time Reminders` section.\n"
+                    "- Do NOT track heartbeat task progress in HEARTBEAT.md — use FOCUS.md for active task tracking.\n\n"
                     f"```markdown\n{content}\n```"
+                    f"If there are no tasks that need to be completed right now, respond ONLY with a stop token (i.e. <|stop|>) and nothing else.\n"
                 )
                 try:
                     await command_bus.put({

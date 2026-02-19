@@ -380,13 +380,19 @@ Here is a transcript of the last 15 messages from a chat session:
 ---
 {content}
 ---
-Write any important or useful notes to memory/YYYY-MM-DD.md.
-Focus on:
-- User preferences
-- Key decisions
-- Completed tasks
+Write a concise EPISODIC SUMMARY of this session for the daily log (YYYY-MM-DD.md).
+
+INCLUDE in the summary:
+- Completed tasks and their outcomes
+- Key decisions made
 - Important context for future sessions
 
+DO NOT INCLUDE (these belong in other files, not the daily log):
+- Reminders, alarms, or scheduled tasks (those belong in HEARTBEAT.md)
+- User profile updates like name, preferences, timezone (those belong in USER.md)
+- Cross-session facts or lessons learned (those belong in MEMORY.md)
+
+Keep it brief — highlights only, not a transcript.
 If there is nothing important to store, respond with exactly: NULL
 """
         try:
