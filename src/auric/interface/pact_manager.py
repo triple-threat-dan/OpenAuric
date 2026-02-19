@@ -177,6 +177,15 @@ class PactManager:
             schemas.extend(adapter.get_tools_schema())
         return schemas
 
+    def get_tool_names(self) -> set:
+        """
+        Returns the set of all tool names available across all enabled pacts.
+        """
+        names = set()
+        for name, adapter in self.adapters.items():
+            names.update(adapter.get_tool_names())
+        return names
+
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         # Linear search for now, could optimize with a map
         for name, adapter in self.adapters.items():

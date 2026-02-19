@@ -297,12 +297,17 @@ class RLMEngine:
                              # Check if it's a spell
                              result = await self.tool_registry.execute_tool(fn_name, args)
                              result_content = f"Spell {fn_name} executed: {result}"
-                        elif self.pact_manager:
-                            # Fallback to Pact
+                        elif self.pact_manager and fn_name in self.pact_manager.get_tool_names():
                             result = await self.pact_manager.execute_tool(fn_name, args)
                             result_content = f"Tool {fn_name} executed successfully: {result}"
                         else:
-                             result_content = f"Error: Tool {fn_name} not found."
+                            # Unknown tool - give clear feedback with available tool names
+                            available = self._get_available_tool_names()
+                            result_content = (
+                                f"ERROR: Tool '{fn_name}' does not exist. "
+                                f"Do NOT invent tool names. "
+                                f"Your available tools are: {', '.join(sorted(available))}"
+                            )
                     except Exception as e:
                         logger.error(f"Failed to execute {fn_name}: {e}")
                         result_content = f"Error executing {fn_name}: {e}"
@@ -446,7 +451,7 @@ class RLMEngine:
         # 5. The Tools
         # We use Native Function Calling. 
         # However, we can list high-level capabilities here if needed.
-        parts.append("## Available Tools\nYou have access to native tools for file operations, shell execution, and python coding.\n")
+        parts.append("## Available Tools\nYou have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names that were not given to you. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**\n")
         parts.append("- **memory_search**: Use this to find information in your Grimoire/Memories. It uses semantic search to find relevant snippets. PREFER this over reading files directly when looking for information.")
         parts.append("- **read_file**: Use this only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
 
@@ -473,6 +478,17 @@ class RLMEngine:
             parts.append(focus_path.read_text(encoding="utf-8"))
         
         return "\n\n".join(parts)
+
+    def _get_available_tool_names(self) -> list:
+        """Collects all known tool names from registry, spells, pacts, and builtins."""
+        names = set()
+        names.add("spawn_sub_agent")
+        if self.tool_registry:
+            names.update(self.tool_registry._internal_tools.keys())
+            names.update(self.tool_registry._spells.keys())
+        if self.pact_manager:
+            names.update(self.pact_manager.get_tool_names())
+        return list(names)
 
     def _track_cost(self, response: Any):
         """
