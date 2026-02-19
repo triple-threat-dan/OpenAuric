@@ -24,6 +24,21 @@ class AuricDiscordClient(discord.Client):
                 await guild.chunk()
                 logger.info(f"Chunked guild {guild.name} ({guild.member_count} members)")
 
+    async def _is_bot_loop(self, channel, limit: int = 4) -> bool:
+        """
+        Check if the last `limit` messages are all from bots (including self).
+        """
+        try:
+            # We need to include the current message in history check or just check history
+            # .history(limit=N) returns newest first
+            async for msg in channel.history(limit=limit):
+                if not msg.author.bot:
+                    return False # Found a human, chain broken
+            return True # All recent messages are bots
+        except Exception as e:
+            logger.error(f"Failed to check bot loop: {e}")
+            return False
+
     async def on_message(self, message: discord.Message):
         # Ignore own messages
         if message.author == self.user:
@@ -71,20 +86,7 @@ class AuricDiscordClient(discord.Client):
                  logger.warning(f"Bot Loop Detected in {message.channel}. Stopping response to {message.author.name}.")
                  return
 
-    async def _is_bot_loop(self, channel, limit: int = 4) -> bool:
-        """
-        Check if the last `limit` messages are all from bots (including self).
-        """
-        try:
-            # We need to include the current message in history check or just check history
-            # .history(limit=N) returns newest first
-            async for msg in channel.history(limit=limit):
-                if not msg.author.bot:
-                    return False # Found a human, chain broken
-            return True # All recent messages are bots
-        except Exception as e:
-            logger.error(f"Failed to check bot loop: {e}")
-            return False
+
 
         # Whitelist Checks / Pairing Authentication
         from auric.core.pairing import PairingManager

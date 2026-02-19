@@ -143,16 +143,35 @@ def heartbeat():
     from auric.core.database import AuditLogger
     
     async def run_manual_beat():
+        # 1. Try to trigger via API (Daemon)
+        config = load_config()
+        port = config.gateway.port
+        token = config.gateway.web_ui_token
+        
+        try:
+            url = f"http://127.0.0.1:{port}/api/heartbeat"
+            req = urllib.request.Request(url, method="POST")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            
+            with urllib.request.urlopen(req) as response:
+                if response.status == 200:
+                    console.print("[bold green]Success! Heartbeat triggered via Daemon.[/bold green]")
+                    return
+        except urllib.error.URLError:
+            console.print("[yellow]Daemon not reachable. Logging manual heartbeat to DB directly...[/yellow]")
+        except Exception as e:
+            console.print(f"[red]API Error: {e}[/red]")
+
+        # 2. Fallback: Log directly to DB
         logger = AuditLogger()
-        # No init_db needed if just logging, but safer to init
-        # actually logging might fail if table missing.
         console.print("[yellow]Initializing Database...[/yellow]")
         await logger.init_db()
         
         console.print("[green]Logging Heartbeat...[/green]")
         # log_heartbeat signature: status="ALIVE", meta={}
         await logger.log_heartbeat(status="MANUAL", meta={"source": "cli"})
-        console.print("[bold green]Success! Heartbeat logged.[/bold green]")
+        console.print("[bold green]Success! Heartbeat logged (Offline Mode).[/bold green]")
 
     asyncio.run(run_manual_beat())
 

@@ -288,4 +288,17 @@ async def get_llm_logs(request: Request, limit: int = 20, offset: int = 0):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/api/heartbeat")
+async def trigger_heartbeat(request: Request):
+    """
+    Triggers a real system heartbeat (Vigil).
+    This checks active hours, reads HEARTBEAT.md, and wakes the agent if needed.
+    """
+    from auric.core.heartbeat import run_heartbeat_task
+    
+    command_bus = getattr(request.app.state, "command_bus", None)
+    await run_heartbeat_task(command_bus=command_bus)
+    
+    return {"status": "Heartbeat triggered"}
+
 # We'll mount the static files in the main daemon setup.
