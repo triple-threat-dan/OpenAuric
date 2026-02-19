@@ -180,7 +180,8 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
 
     if not in_hours:
         status = "SKIPPED"
-        logger.debug(f"Heartbeat: Outside active hours ({active_window}). Pulse skipped.")
+        print(f"💤 Heartbeat Skipped: Outside active hours ({active_window})")
+        logger.info(f"Heartbeat: Outside active hours ({active_window}). Pulse skipped.")
 
     # Always log the heartbeat attempt
     heartbeat_file = AURIC_ROOT / "HEARTBEAT.md"

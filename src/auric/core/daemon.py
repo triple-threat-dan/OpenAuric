@@ -312,7 +312,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
 
                      elif level == "AGENT": color = "green"
                      elif level == "USER": color = "blue"
-                     elif level == "TOOL": color = "magenta"
+                     elif level == "HEARTBEAT": color = "magenta"
+                     elif level == "TOOL": color = "bold yellow"
                      
                      if level != "THOUGHT": # Already created text_obj for THOUGHT
                         text_obj = Text(f"[{timestamp}] [{level}] {text}")
@@ -331,7 +332,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      web_log_buffer.append(f"[{level}] {text}")
                      
                      # Chat History filters
-                     if level in ("USER", "AGENT", "THOUGHT"):
+                     if level in ("USER", "AGENT", "THOUGHT", "HEARTBEAT"):
                           # Only show non-heartbeat messages in the Web UI Chat
                           # Heartbeats are still logged to DB below
                           if msg.get("source") != "HEARTBEAT":
@@ -420,7 +421,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          session_id = current_sid
 
                      await internal_bus.put({
-                         "level": "USER",
+                         "level": "HEARTBEAT" if source == "HEARTBEAT" else "USER",
                          "message": user_msg,
                          "source": source,
                          "session_id": session_id # Pass it along for logging
@@ -443,7 +444,9 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          if source == "PACT" and platform and sender_id:
                              asyncio.create_task(pact_manager.trigger_typing(platform, sender_id))
 
-                         response = await rlm_engine.think(user_msg, session_id=session_id)
+                         # Select model tier based on source
+                         model_tier = "heartbeat_model" if source == "HEARTBEAT" else "smart_model"
+                         response = await rlm_engine.think(user_msg, session_id=session_id, model_tier=model_tier)
                          
                          # Reply to Source
                          if source in ["WEB", "HEARTBEAT"]: # Handle HEARTBEAT same as WEB for now logic-wise

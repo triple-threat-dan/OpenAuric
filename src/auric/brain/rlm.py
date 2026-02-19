@@ -98,7 +98,7 @@ class RLMEngine:
         self._action_history: List[str] = []
         self._max_history = 10 
 
-    async def think(self, user_query: str, depth: int = 0, session_id: Optional[str] = None) -> str:
+    async def think(self, user_query: str, depth: int = 0, session_id: Optional[str] = None, model_tier: str = "smart_model") -> str:
         """
         The main recursive loop.
         1. Checks safeguards (Depth, Cost).
@@ -212,7 +212,7 @@ class RLMEngine:
             try:
                 response = await self.gateway.chat_completion(
                     messages=messages,
-                    tier="smart_model",
+                    tier=model_tier,
                     session_id=session_id,
                     tools=tools_arg
                 )
