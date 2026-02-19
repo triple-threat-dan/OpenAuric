@@ -38,9 +38,17 @@ class HeartbeatConfig(BaseModel):
     active_hours: str = Field(default="09:00-18:00", alias="activeHours")
     target: str = "console"
 
+class LoggingConfig(BaseModel):
+    """Configuration for system-wide JSONL logging."""
+    enabled: bool = True
+    max_size_mb: int = 10
+    backup_count: int = 5
+    log_dir: str = ".auric/logs"
+
 class AgentDefaults(BaseModel):
     """Default settings for agents."""
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
+    logging: "LoggingConfig" = Field(default_factory=lambda: LoggingConfig())
 
 class ModelConfig(BaseModel):
     """Configuration for a specific model."""
@@ -71,6 +79,7 @@ class GatewayConfig(BaseModel):
     port: int = 8067
     host: str = "127.0.0.1"
     web_ui_token: Optional[str] = None # Security Token for Web UI
+    disable_access_log: bool = False # Disable Uvicorn access logging
 
 class SandboxConfig(BaseModel):
     """Configuration for the isolated Python sandbox."""

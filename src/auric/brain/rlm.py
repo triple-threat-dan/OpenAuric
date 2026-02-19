@@ -1,7 +1,7 @@
 import logging
 import hashlib
 import json
-import json
+import os
 import re
 import inspect
 from types import SimpleNamespace
@@ -113,6 +113,12 @@ class RLMEngine:
             raise CostLimitExceeded(f"Session cost ${self.session_cost:.2f} exceeds limit ${self.config.agents.max_cost}")
 
         logger.info(f"RLM Thinking (Depth {depth}): {user_query[:50]}...")
+        
+        # LOGGING
+        from auric.core.system_logger import SystemLogger
+        sl = SystemLogger.get_instance()
+        sl.log("THOUGHT_START", {"query": user_query, "depth": depth, "session_id": session_id}, session_id=session_id)
+
 
         # 2. Focus-Shift: Gather Context
         # We query the librarian for relevant knowledge based on the user query
@@ -230,6 +236,7 @@ class RLMEngine:
             # If no tool calls, we are done
             if not tool_calls:
                 final_response = content
+                sl.log("THOUGHT_END", {"response": final_response, "cost": self.session_cost}, session_id=session_id)
                 return final_response
 
             # Append Assistant's thought/tool-call to history
@@ -262,6 +269,8 @@ class RLMEngine:
                     # Add args if concise, or maybe just simple name
                     # Let's show args for clarity
                     log_msg += f" with args: {json.dumps(args)}"
+                    
+                    sl.log("TOOL_CALL", {"name": fn_name, "args": args}, session_id=session_id)
                     
                     if inspect.iscoroutinefunction(self.log_callback):
                         await self.log_callback("TOOL", log_msg)
@@ -419,14 +428,17 @@ class RLMEngine:
         # 3. The Time
         parts.append(f"## Current Time\n{datetime.now().isoformat()} EST")
 
+        # 3.1 Environment
+        import platform
+        parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: When using `execute_powershell`, standard PowerShell syntax applies.")
+
         # 4 Memory & Abilities
         memory_path = AURIC_ROOT / "memories" / "MEMORY.md"
         if memory_path.exists():
             parts.append(memory_path.read_text(encoding="utf-8"))
 
-        spells_path = AURIC_ROOT / "grimoire" / "SPELLS.md"
-        if spells_path.exists():
-            parts.append(spells_path.read_text(encoding="utf-8"))
+        if self.tool_registry:
+            parts.append(self.tool_registry.get_spells_context())
 
         # 5. The Tools
         # In a real system, we'd iterate over available tools and dump their schemas.

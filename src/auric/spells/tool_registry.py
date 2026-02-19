@@ -73,7 +73,7 @@ class ToolRegistry:
                     self._load_single_spell(skill_file)
         
         logger.info(f"Loaded {len(self._spells)} spells.")
-        self._generate_spells_index()
+        logger.info(f"Loaded {len(self._spells)} spells.")
 
     def _load_single_spell(self, path: Path):
         """Parses a single SKILL.md and registers the spell."""
@@ -141,25 +141,36 @@ class ToolRegistry:
                     return script
         return None
 
-    def _generate_spells_index(self):
-        """Generates the SPELLS.md file for system prompt inclusion."""
-        index_path = self.spells_dir.parent / "SPELLS.md"
-        try:
-            lines = ["# Available Spells", ""]
-            for name, data in self._spells.items():
-                lines.append(f"## {name}")
-                lines.append(f"**Description**: {data['description']}")
-                lines.append(f"**Format**: To use, output a tool call for `{name}`.")
-                if data["script"]:
-                    lines.append("**Type**: Executable (Auto-runs script)")
-                else:
-                    lines.append("**Type**: Instruction (Returns procedure)")
-                lines.append("")
+    def get_spells_context(self) -> str:
+        """
+        Generates the dynamic context string for available spells.
+        Includes name, relative path, and frontmatter.
+        """
+        if not self._spells:
+            return ""
+
+        lines = ["## Available Spells", "To initiate a spell, use the tool `spell_crafter` or the specific spell tool if available.", ""]
+        
+        for name, data in self._spells.items():
+            # Calculate relative path from CWD (AURIC_ROOT/..) if possible, else just use path
+            try:
+                # data['path'] is the dir containing SKILL.md
+                rel_path = data['path'].relative_to(Path.cwd())
+            except ValueError:
+                rel_path = data['path']
+
+            lines.append(f"### {name}")
+            lines.append(f"**Path**: {rel_path}")
+            lines.append(f"**Description**: {data['description']}") 
+            # Add parameters if they exist
+            if data.get("parameters"):
+                lines.append(f"**Parameters**:")
+                lines.append(f"```json")
+                lines.append(f"{json.dumps(data['parameters'])}")
+                lines.append(f"```")
+            lines.append("")
             
-            index_path.parent.mkdir(parents=True, exist_ok=True)
-            index_path.write_text("\n".join(lines), encoding="utf-8")
-        except Exception as e:
-            logger.error(f"Failed to write SPELLS.md: {e}")
+        return "\n".join(lines)
 
     # ==========================================================================
     # Internal Standard Library Tools
@@ -311,7 +322,7 @@ class ToolRegistry:
         """
         try:
             # Normalize path separators for Windows (PowerShell doesn't always like mixed / and \)
-            command = command.replace("/", "\\")
+            # command = command.replace("/", "\\")  <-- REMOVED: Breaks URLs! PowerShell handles / fine in strings.
             
             # We use powershell -Command "..."
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
@@ -399,6 +410,11 @@ class ToolRegistry:
                     result = await func(**arguments)
                 else:
                     result = func(**arguments)
+                
+                # LOGGING
+                from auric.core.system_logger import SystemLogger
+                SystemLogger.get_instance().log("TOOL_EXECUTION", {"name": name, "args": arguments, "result": str(result)[:1000]})
+                
                 return str(result)
             except TypeError as e:
                  return f"Error executing tool '{name}': Invalid arguments - {str(e)}"
@@ -408,7 +424,10 @@ class ToolRegistry:
 
         # 2. Spells
         if name in self._spells:
-            return await self._execute_spell(name, arguments)
+            res = await self._execute_spell(name, arguments)
+            from auric.core.system_logger import SystemLogger
+            SystemLogger.get_instance().log("SPELL_EXECUTION", {"name": name, "args": arguments, "result": str(res)[:1000]})
+            return res
         
         return f"Error: Tool or Spell '{name}' not found."
 

@@ -199,7 +199,11 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
             
     # Launch server as a background task
     # Apply filter to uvicorn access log
-    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+    access_logger = logging.getLogger("uvicorn.access")
+    if config.gateway.disable_access_log:
+        access_logger.disabled = True
+    else:
+        access_logger.addFilter(EndpointFilter())
     
     api_task = asyncio.create_task(safe_serve())
     logger.info(f"API Server starting on {config.gateway.host}:{config.gateway.port}")

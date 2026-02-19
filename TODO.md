@@ -34,4 +34,9 @@ Current issues:
 - [ ] add support for receiving files from the agent
 - [x] SECURITY. Add token for the frontend ui.
 - [x] SECURITY. Add pairing for discord integration.
-- [ ] add support for specialist agents/models for the rlm to call. 
+- [ ] add support for specialist agents/models for the rlm to call (coding specialists, RP/chat specialists, etc.)
+- [ ] sessions still aren't closing when I am trying to force them to. We need to review how sessions are routed, especially from DMs to general chats and vice-versa. 
+- [x] logs... we need to log *everything*. We need an everything log that logs every single tool call, chat, response, llm call, etc. in JSONL format.
+- [ ] need to add a config/settings page on the frontend ui to allow users to configure their pacts, tokens, etc. Basically a UI for the json config.
+- [ ] We need to add a way to search the logs and memories, perhaps ui pages 
+- [ ] Add per-file unit tests for all the modules, get test coverage above 80%

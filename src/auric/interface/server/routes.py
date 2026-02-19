@@ -271,6 +271,49 @@ async def chat(request: Request, chat_req: ChatRequest):
     await command_bus.put(msg)
     return {"status": "Message sent"}
 
+@router.get("/api/system_logs")
+async def get_system_logs(request: Request, limit: int = 100):
+    """
+    Returns the last N lines from the system log file.
+    """
+    try:
+        from auric.core.config import load_config
+        config = load_config()
+        
+        log_dir_str = config.agents.defaults.logging.log_dir
+        log_dir = Path(log_dir_str)
+        if not log_dir.is_absolute():
+            log_dir = Path.cwd() / log_dir
+            
+        log_file = log_dir / "system.jsonl"
+        
+        if not log_file.exists():
+            return {"lines": []}
+            
+        # Read last N lines (efficiently-ish)
+        # For simplicity, we read all and take last N, but for production use `deque` or file seeking.
+        # Given max size is 10MB, reading it all is okay-ish but not great.
+        # Let's use `deque` from collections
+        from collections import deque
+        with open(log_file, "r", encoding="utf-8") as f:
+            last_lines = deque(f, maxlen=limit)
+            
+        # Parse JSON
+        parsed_lines = []
+        import json
+        for line in last_lines:
+            try:
+                parsed_lines.append(json.loads(line))
+            except:
+                parsed_lines.append({"raw": line})
+                
+        # Reverse to show newest first
+        parsed_lines.reverse()
+        return {"lines": parsed_lines}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/api/llm_logs", response_model=LLMLogsResponse)
 async def get_llm_logs(request: Request, limit: int = 20, offset: int = 0):
     """Returns paginated LLM logs."""

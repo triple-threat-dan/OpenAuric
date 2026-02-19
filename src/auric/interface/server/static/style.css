@@ -632,3 +632,51 @@ button:hover {
     min-height: 1.2em;
     font-weight: bold;
 }
+
+/* Config Panel & Navigation Buttons */
+#config-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.config-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    /* Fill text area */
+    justify-content: center;
+}
+
+.nav-btn {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
+    color: var(--accent-color);
+    padding: 15px;
+    text-align: center;
+    text-decoration: none;
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.nav-btn:hover {
+    background: rgba(10, 189, 199, 0.1);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 10px rgba(10, 189, 199, 0.2);
+    transform: translateX(2px);
+    color: #fff;
+}
+
+.nav-btn .icon {
+    font-size: 1.2rem;
+}
