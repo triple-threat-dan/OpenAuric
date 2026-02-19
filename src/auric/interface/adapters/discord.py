@@ -327,6 +327,47 @@ class DiscordPact(BasePact):
         except Exception as e:
             logger.error(f"Failed to send DM to {user_id}: {e}")
 
+    async def lookup_user(self, query: str) -> str:
+        """
+        Search for a user by name or ID across all visible guilds.
+        Returns a formatted list of matches.
+        """
+        if not self.client or not self.client.is_ready():
+            return "Error: Discord Pact not ready."
+
+        matches = []
+        unique_ids = set()
+        
+        query_lower = query.lower()
+        
+        # Helper to add match
+        def add_match(user, source):
+            if user.id in unique_ids or user == self.client.user:
+                return
+            unique_ids.add(user.id)
+            matches.append(f"- {user.name} (Display: {user.display_name}) [ID: {user.id}] - Found in: {source}")
+
+        # 1. Try as ID
+        if query.isdigit():
+            try:
+                user = await self.client.fetch_user(int(query))
+                if user:
+                    add_match(user, "Direct Fetch")
+            except:
+                pass
+
+        # 2. Search Guilds
+        for guild in self.client.guilds:
+            # Exact/Partial Name Match
+            for member in guild.members:
+                if query_lower in member.name.lower() or query_lower in member.display_name.lower():
+                    add_match(member, f"Guild '{guild.name}'")
+        
+        if not matches:
+            return f"No users found matching '{query}'. Context: {len(self.client.guilds)} guilds scaned."
+        
+        return "Found users:\n" + "\n".join(matches[:10]) # Limit to 10
+
     async def send_channel_message(self, channel_id: str, content: str) -> None:
         """
         Send a message to a specific channel.
@@ -443,7 +484,8 @@ class DiscordPact(BasePact):
         return [
             "discord_send_dm", 
             "discord_send_channel_message", 
-            "discord_add_reaction"
+            "discord_add_reaction",
+            "discord_lookup_user"
         ]
 
     def get_tools_schema(self) -> List[Dict[str, Any]]:
@@ -514,12 +556,31 @@ class DiscordPact(BasePact):
                         "required": ["channel_id", "message_id", "emoji"]
                     }
                 }
+            },
+             {
+                "type": "function",
+                "function": {
+                    "name": "discord_lookup_user",
+                    "description": "Search for a Discord user by name or ID.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The username, display name, or ID to search for."
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
             }
         ]
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         if tool_name == "discord_send_dm":
             return await self.send_dm(args.get("user_id"), args.get("content"))
+        elif tool_name == "discord_lookup_user":
+            return await self.lookup_user(args.get("query"))
         elif tool_name == "discord_send_channel_message":
             await self.send_channel_message(args.get("channel_id"), args.get("content"))
             return "Message sent."
