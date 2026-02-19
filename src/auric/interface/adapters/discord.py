@@ -336,7 +336,8 @@ class DiscordPact(BasePact):
 
             if user:
                 logger.info(f"Resolved DM target to: {user.name} (ID: {user.id}) [Type: {type(user).__name__}]")
-                await user.send(content)
+                for chunk in self._chunk_message(content):
+                    await user.send(chunk)
                 logger.info(f"Sent DM to {user.name} ({user.id})")
                 return f"Message sent to {user.name} ({user.id})"
             else:
@@ -398,9 +399,50 @@ class DiscordPact(BasePact):
         
         return "Found users:\n" + "\n".join(matches[:10]) # Limit to 10
 
+    @staticmethod
+    def _chunk_message(content: str, max_length: int = 2000) -> list[str]:
+        """
+        Splits a message into chunks that fit within Discord's character limit.
+        Tries to split at paragraph boundaries, then line boundaries, then word boundaries.
+        """
+        if len(content) <= max_length:
+            return [content]
+        
+        chunks = []
+        remaining = content
+        
+        while remaining:
+            if len(remaining) <= max_length:
+                chunks.append(remaining)
+                break
+            
+            # Try to find a good split point
+            chunk = remaining[:max_length]
+            
+            # Priority 1: Split at paragraph boundary (double newline)
+            split_idx = chunk.rfind('\n\n')
+            
+            # Priority 2: Split at line boundary
+            if split_idx == -1 or split_idx < max_length // 2:
+                split_idx = chunk.rfind('\n')
+            
+            # Priority 3: Split at word boundary (space)
+            if split_idx == -1 or split_idx < max_length // 2:
+                split_idx = chunk.rfind(' ')
+            
+            # Fallback: Hard split at max_length
+            if split_idx == -1 or split_idx < max_length // 4:
+                split_idx = max_length
+            
+            chunks.append(remaining[:split_idx].rstrip())
+            remaining = remaining[split_idx:].lstrip()
+        
+        return [c for c in chunks if c]  # Filter empty chunks
+
     async def send_channel_message(self, channel_id: str, content: str) -> None:
         """
         Send a message to a specific channel.
+        Auto-splits long messages to respect Discord's 2000-char limit.
         """
         if not self.client or not self.client.is_ready():
             logger.error("Cannot send message: Discord Pact not ready.")
@@ -417,7 +459,8 @@ class DiscordPact(BasePact):
                     pass
             
             if channel and hasattr(channel, 'send'):
-                await channel.send(content)
+                for chunk in self._chunk_message(content):
+                    await channel.send(chunk)
             else:
                 logger.error(f"Channel {channel_id} not found or not sendable.")
         except Exception as e:
