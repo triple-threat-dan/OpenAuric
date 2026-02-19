@@ -179,24 +179,28 @@ class RLMEngine:
         if self.pact_manager:
             tools_schemas.extend(self.pact_manager.get_tools_schema())
         
-        # Add spawn_sub_agent manually
-        tools_schemas.append({
-            "type": "function",
-            "function": {
-                "name": "spawn_sub_agent",
-                "description": "Delegates a complex sub-task to a recursive sub-agent. The sub-agent has its own context and tools. Use this to break down large tasks.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "instruction": {
-                            "type": "string",
-                            "description": "The specific instruction for the sub-agent to execute."
-                        }
-                    },
-                    "required": ["instruction"]
+        # Add spawn_sub_agent only if there's room in the recursion budget.
+        # Sub-agents near max depth should NOT see this tool, forcing them to
+        # produce content directly instead of endlessly delegating.
+        max_depth = self.config.agents.max_recursion
+        if depth + 1 <= max_depth:
+            tools_schemas.append({
+                "type": "function",
+                "function": {
+                    "name": "spawn_sub_agent",
+                    "description": "Delegates a complex sub-task to a recursive sub-agent. The sub-agent has its own context and tools. Use this ONLY for tasks that genuinely require independent multi-step reasoning, or long-form content generation (e.g. breaking novel writing into chapters, breaking documentation into sections or steps, etc.). Do NOT use this for simple content generation — just produce the content directly.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "instruction": {
+                                "type": "string",
+                                "description": "The specific instruction for the sub-agent to execute."
+                            }
+                        },
+                        "required": ["instruction"]
+                    }
                 }
-            }
-        })
+            })
         
         # If no tools, pass None
         tools_arg = tools_schemas if tools_schemas else None
