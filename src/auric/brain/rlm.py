@@ -4,6 +4,8 @@ import json
 import os
 import re
 import inspect
+import platform
+import uuid
 from types import SimpleNamespace
 from datetime import datetime
 from pathlib import Path
@@ -11,11 +13,12 @@ from typing import List, Dict, Any, Optional, Callable
 
 from pydantic import BaseModel, Field
 
-from auric.core.config import AuricConfig, AURIC_WORKSPACE_DIR, AURIC_ROOT, AURIC_ROOT
+from auric.core.config import AuricConfig, AURIC_WORKSPACE_DIR, AURIC_ROOT
 from auric.brain.llm_gateway import LLMGateway
 from auric.memory.librarian import GrimoireLibrarian
 from auric.memory.focus_manager import FocusManager
 from auric.spells.tool_registry import ToolRegistry
+from auric.core.system_logger import SystemLogger
 
 logger = logging.getLogger("auric.brain.rlm")
 
@@ -94,6 +97,9 @@ class RLMEngine:
         self.session_cost = 0.0
         self.recursion_guard = RecursionGuard(config.agents.max_recursion)
         
+        # Cache logger instance
+        self.system_logger = SystemLogger.get_instance()
+
         # Loop detection: Store hashes of (tool_name, arguments)
         self._action_history: List[str] = []
         self._max_history = 10 
@@ -115,30 +121,22 @@ class RLMEngine:
         logger.info(f"RLM Thinking (Depth {depth}): {user_query[:50]}...")
         
         # LOGGING
-        from auric.core.system_logger import SystemLogger
-        sl = SystemLogger.get_instance()
-        sl.log("THOUGHT_START", {"query": user_query, "depth": depth, "session_id": session_id}, session_id=session_id)
+        self.system_logger.log("THOUGHT_START", {"query": user_query, "depth": depth, "session_id": session_id}, session_id=session_id)
 
 
         # 2. Focus-Shift: Gather Context
         # We query the librarian for relevant knowledge based on the user query
         search_results = self.librarian.search(user_query)
+        
         # Extract just the content string for the context
-        # Defensive extraction with logging
         snippets = []
         if search_results:
-            # check the first item
-            first = search_results[0]
-            logger.error(f"DEBUG_DUMP: search_results len={len(search_results)}")
-            logger.error(f"DEBUG_DUMP: first result type={type(first)}")
-            logger.error(f"DEBUG_DUMP: first result={first}")
-            
-            for i, res in enumerate(search_results):
+            for res in search_results:
                 if isinstance(res, dict) and "content" in res:
-                    snippets.append(str(res["content"])) # Force string
+                    snippets.append(str(res["content"]))
                 else:
-                    logger.error(f"DEBUG_WARN: Item {i} missing content or not dict: {res}")
-                    snippets.append(str(res)) # Fallback
+                    # Fallback for non-dict results or missing content key
+                    snippets.append(str(res))
         
         task_context = TaskContext(
             query=user_query,
@@ -184,23 +182,7 @@ class RLMEngine:
         # produce content directly instead of endlessly delegating.
         max_depth = self.config.agents.max_recursion
         if depth + 1 <= max_depth:
-            tools_schemas.append({
-                "type": "function",
-                "function": {
-                    "name": "spawn_sub_agent",
-                    "description": "Delegates a complex sub-task to a recursive sub-agent. The sub-agent has its own context and tools. Use this ONLY for tasks that genuinely require independent multi-step reasoning, or long-form content generation (e.g. breaking novel writing into chapters, breaking documentation into sections or steps, etc.). Do NOT use this for simple content generation — just produce the content directly.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "instruction": {
-                                "type": "string",
-                                "description": "The specific instruction for the sub-agent to execute."
-                            }
-                        },
-                        "required": ["instruction"]
-                    }
-                }
-            })
+            tools_schemas.append(self._get_recursion_tool_schema())
         
         # If no tools, pass None
         tools_arg = tools_schemas if tools_schemas else None
@@ -240,7 +222,7 @@ class RLMEngine:
             # If no tool calls, we are done
             if not tool_calls:
                 final_response = content
-                sl.log("THOUGHT_END", {"response": final_response, "cost": self.session_cost}, session_id=session_id)
+                self.system_logger.log("THOUGHT_END", {"response": final_response, "cost": self.session_cost}, session_id=session_id)
                 return final_response
 
             # Append Assistant's thought/tool-call to history
@@ -274,7 +256,7 @@ class RLMEngine:
                     # Let's show args for clarity
                     log_msg += f" with args: {json.dumps(args)}"
                     
-                    sl.log("TOOL_CALL", {"name": fn_name, "args": args}, session_id=session_id)
+                    self.system_logger.log("TOOL_CALL", {"name": fn_name, "args": args}, session_id=session_id)
                     
                     if inspect.iscoroutinefunction(self.log_callback):
                         await self.log_callback("TOOL", log_msg)
@@ -417,69 +399,47 @@ class RLMEngine:
         parts = []
 
         # 0. The Agent (Core Requirements)
-        agent_path = AURIC_ROOT / "AGENT.md"
-        if agent_path.exists():
-             parts.append(agent_path.read_text(encoding="utf-8"))
-        else:
-             parts.append("You are OpenAuric, a recursive AI agent.")
+        agent_text = self._read_section(AURIC_ROOT / "AGENT.md")
+        parts.append(agent_text if agent_text else "You are OpenAuric, a recursive AI agent.")
 
         # 1. The Soul (Personality)
-        soul_path = AURIC_ROOT / "SOUL.md"
-        if soul_path.exists():
-            parts.append(soul_path.read_text(encoding="utf-8"))
+        if soul_text := self._read_section(AURIC_ROOT / "SOUL.md"):
+            parts.append(soul_text)
 
         # 2. The User (Only at Depth 0)
         if task_context.depth == 0:
-            user_path = AURIC_ROOT / "USER.md"
-            if user_path.exists():
-                parts.append(f"## User Context\n{user_path.read_text(encoding='utf-8')}")
+            if user_text := self._read_section(AURIC_ROOT / "USER.md"):
+                parts.append(f"## User Context\n{user_text}")
 
-        # 3. The Time
+        # 3. The Time & Environment
         parts.append(f"## Current Time\n{datetime.now().isoformat()} EST")
-
-        # 3.1 Environment
-        import platform
         parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: When using `execute_powershell`, standard PowerShell syntax applies.")
 
         # 4 Memory & Abilities
-        memory_path = AURIC_ROOT / "memories" / "MEMORY.md"
-        if memory_path.exists():
-            parts.append(memory_path.read_text(encoding="utf-8"))
+        if memory_text := self._read_section(AURIC_ROOT / "memories" / "MEMORY.md"):
+            parts.append(memory_text)
 
         if self.tool_registry:
             parts.append(self.tool_registry.get_spells_context())
 
         # 5. The Tools
-        # In a real system, we'd iterate over available tools and dump their schemas.
-        # For now, we inject a generic placeholder or specific instructions.
-        # 5. The Tools
-        # We use Native Function Calling. 
-        # However, we can list high-level capabilities here if needed.
         parts.append("## Available Tools\nYou have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names that were not given to you. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**\n")
         parts.append("- **memory_search**: Use this to find information in your Grimoire/Memories. It uses semantic search to find relevant snippets. PREFER this over reading files directly when looking for information.")
         parts.append("- **read_file**: Use this only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
 
-
         # Inject Pact Tools
         if self.pact_manager:
-            pact_tools = self.pact_manager.get_all_tools_definitions()
-            if pact_tools:
+            if pact_tools := self.pact_manager.get_all_tools_definitions():
                 parts.append(pact_tools)
 
-        # Registry Tools are now passed natively to the LLM context.
-        # We do not dump their schemas into the text prompt anymore.
-        
-
-        # 6. The Memory (Snapshot)
+        # 6. The Memory (Snapshot from Semantic Search)
         if task_context.relevant_snippets:
             parts.append("## Relevant Context (Grimoire)")
-            for snippet in task_context.relevant_snippets:
-                parts.append(snippet)
+            parts.extend(task_context.relevant_snippets)
 
         # 7. The Focus (Working Memory)
-        focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
-        if focus_path.exists():
-            parts.append(focus_path.read_text(encoding="utf-8"))
+        if focus_text := self._read_section(AURIC_ROOT / "memories" / "FOCUS.md"):
+            parts.append(focus_text)
         
         return "\n\n".join(parts)
 
@@ -534,3 +494,32 @@ class RLMEngine:
         if len(self._action_history) >= 3:
             if self._action_history[-1] == self._action_history[-2] == self._action_history[-3]:
                 raise RepetitiveStressError(f"Detected infinite loop for tool {tool_name} with args {args}")
+
+    def _read_section(self, path: Path) -> Optional[str]:
+        """Helper to read a markdown section if it exists."""
+        try:
+            if path.exists():
+                return path.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            logger.warning(f"Failed to read section {path}: {e}")
+        return None
+
+    def _get_recursion_tool_schema(self) -> Dict[str, Any]:
+        """Returns the schema for the spawn_sub_agent tool."""
+        return {
+            "type": "function",
+            "function": {
+                "name": "spawn_sub_agent",
+                "description": "Delegates a complex sub-task to a recursive sub-agent. The sub-agent has its own context and tools. Use this ONLY for tasks that genuinely require independent multi-step reasoning, or long-form content generation (e.g. breaking novel writing into chapters, breaking documentation into sections or steps, etc.). Do NOT use this for simple content generation — just produce the content directly.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instruction": {
+                            "type": "string",
+                            "description": "The specific instruction for the sub-agent to execute."
+                        }
+                    },
+                    "required": ["instruction"]
+                }
+            }
+        }
