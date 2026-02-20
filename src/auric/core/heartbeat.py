@@ -219,7 +219,8 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
                         "level": "USER",
                         "message": prompt,
                         "source": "HEARTBEAT",
-                        "session_id": session_id 
+                        "session_id": session_id,
+                        "heartbeat_source_content": content 
                     })
                 except Exception as ex:
                     logger.error(f"Heartbeat Bus Error: {ex}")

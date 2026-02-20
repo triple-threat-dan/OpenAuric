@@ -451,6 +451,25 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
 
                          # Select model tier based on source
                          model_tier = "heartbeat_model" if source == "HEARTBEAT" else "smart_model"
+                         
+                         # Optimization: Lean Heartbeat Check
+                         if source == "HEARTBEAT":
+                             try:
+                                 # Use raw content if available (cleaner signal), else fallback to full message
+                                 check_target = item.get("heartbeat_source_content", user_msg)
+                                 is_necessary = await rlm_engine.check_heartbeat_necessity(check_target)
+                                 if not is_necessary:
+                                     logger.info("🛌 Heartbeat skipped: No actionable tasks for this time.")
+                                     await internal_bus.put({
+                                         "level": "HEARTBEAT",
+                                         "message": "🛌 Heartbeat skipped: No actionable tasks for this time.",
+                                         "source": "BRAIN",
+                                         "session_id": session_id
+                                     })
+                                     continue # Skip full think cycle
+                             except Exception as hb_err:
+                                 logger.error(f"Heartbeat Check Failed: {hb_err}. Proceeding to think anyway.")
+
                          response = await rlm_engine.think(user_msg, session_id=session_id, model_tier=model_tier)
                          
                          # Reply to Source

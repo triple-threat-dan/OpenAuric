@@ -100,9 +100,82 @@ class RLMEngine:
         # Cache logger instance
         self.system_logger = SystemLogger.get_instance()
 
-        # Loop detection: Store hashes of (tool_name, arguments)
         self._action_history: List[str] = []
         self._max_history = 10 
+
+    async def check_heartbeat_necessity(self, user_query: str) -> bool:
+        """
+        Performs a 'Lean Check' to see if the full agent is needed.
+        Returns True if there is actionable content in the heartbeat message.
+        """
+        # 1. Trivial check: If empty or just headers
+        clean_query = user_query.strip()
+        if not clean_query:
+            return False
+            
+        # 2. Lean LLM Check
+        # We use the configured 'heartbeat_model' (likely a cheaper/faster model)
+        # to classify the text.
+        
+        # Helper to get time of day
+        now = datetime.now()
+        hour = now.hour
+        if 5 <= hour < 12:
+            period = "Morning"
+        elif 12 <= hour < 17:
+            period = "Afternoon"
+        elif 17 <= hour < 21:
+            period = "Evening"
+        else:
+            period = "Night"
+            
+        system_prompt = (
+            "You are the Heartbeat Monitor for OpenAuric.\n"
+            "**GOAL**: Determine if the provided `HEARTBEAT.md` content contains *actionable* tasks *for Current Time*.\n\n"
+            "**CONSTRAINTS**:\n"
+            "1. **Ignore Structure**: Ignore HTML comments (`<!-- -->`), headers (`#`), and whitespace.\n"
+            "2. **Check for Actionable Text**: Look for instructions (e.g., 'Check database', 'Every morning...').\n"
+            "3. **STRICT TIME CHECK**: Compare the task's time condition against Current Time.\n"
+            "   - If task says '9am' and it is 00:30 -> NO.\n"
+            "   - If task says 'Every evening' and it is Morning -> NO.\n"
+            "   - If task says 'at 5pm' and it is 5:00pm -> YES.\n"
+            "4. **Output Format**: \n"
+            "   - Scan tasks ONE BY ONE.\n"
+            "   - **STOP IMMEDIATELY** if you find a task that is actionable NOW.\n"
+            "   - Output: 'Task: [Brief Text] -> [Analysis] -> VERDICT: YES'\n"
+            "   - If no tasks are actionable after scanning all, output 'VERDICT: NO'."
+            "5. **Output Format**: ONLY output the VERDICT. No other text (e.g. 'VERDICT: YES' or 'VERDICT: NO').\n"
+            f"Current Time: {now.strftime('%Y-%m-%d %H:%M')} ({period})\n\n"
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Analyze this content:\n---\n{clean_query}\n---"}
+        ]
+
+        try:
+            response = await self.gateway.chat_completion(
+                messages=messages,
+                tier="heartbeat_model", 
+                # Allow enough tokens for a single positive analysis or a few negatives
+                max_tokens=700 
+            )
+            
+            # Track cost for this lean check too
+            try:
+                self._track_cost(response)
+            except Exception as cost_err:
+                logger.warning(f"Failed to track cost for heartbeat check: {cost_err}")
+            
+            content = response.choices[0].message.content.strip().upper()
+            logger.info(f"Heartbeat Lean Check:\n{content}")
+            
+            return "VERDICT: YES" in content
+            
+        except Exception as e:
+            logger.error(f"Heartbeat Lean Check Failed: {e}")
+            # Fail safe: if check fails, assume we should wake up (better to be noisy than miss a task)
+            return True 
 
     async def think(self, user_query: str, depth: int = 0, session_id: Optional[str] = None, model_tier: str = "smart_model") -> str:
         """
