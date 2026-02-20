@@ -1,22 +1,6 @@
-import os
-import signal
-import sys
-import asyncio
-import atexit
-import psutil
 import typer
-import json5
-import json
-import urllib.request
-import urllib.error
-from pathlib import Path
-from typing import Any, Optional
 from rich.console import Console
-from rich.table import Table
-
-# Shared modules
-from auric.core.config import load_config, AuricConfig, ConfigLoader, AURIC_ROOT
-from auric.spells.tool_registry import ToolRegistry
+from auric.core.config import AURIC_ROOT
 
 app = typer.Typer(help="OpenAuric: The Recursive Agentic Warlock")
 dashboard_app = typer.Typer(help="Manage the OpenAuric dashboard")
@@ -27,7 +11,6 @@ app.add_typer(dashboard_app, name="dashboard")
 app.add_typer(config_app, name="config")
 app.add_typer(spells_app, name="spells")
 
-pairing_app = typer.Typer(help="Manage Device/User Pairing")
 pairing_app = typer.Typer(help="Manage Device/User Pairing")
 app.add_typer(pairing_app, name="pairing")
 
@@ -49,6 +32,9 @@ PID_FILE = AURIC_ROOT / "auric.pid"
 @app.command()
 def start():
     """Start the Auric Daemon with TUI."""
+    import os
+    import psutil
+    import atexit
     import asyncio
     from auric.core.daemon import run_daemon
     from fastapi import FastAPI
@@ -95,6 +81,7 @@ def start():
 @app.command()
 def stop(force: bool = typer.Option(False, "--force", "-f", help="Force kill the process")):
     """Stop the Auric Daemon."""
+    import psutil
     if not PID_FILE.exists():
         console.print("[yellow]No PID file found. Is the daemon running?[/yellow]")
         return
@@ -140,6 +127,9 @@ def stop(force: bool = typer.Option(False, "--force", "-f", help="Force kill the
 def heartbeat():
     """Triggers a manual system heartbeat."""
     import asyncio
+    import urllib.request
+    import urllib.error
+    from auric.core.config import load_config
     from auric.core.database import AuditLogger
     
     async def run_manual_beat():
@@ -194,6 +184,7 @@ def token_main(ctx: typer.Context):
 
 def token_get():
     """Helper to get token."""
+    from auric.core.config import load_config
     config = load_config()
     current_token = config.gateway.web_ui_token
     
@@ -211,6 +202,7 @@ def token_new():
     Generate a NEW Web UI Security Token (Invalidates old one).
     """
     import secrets
+    from auric.core.config import load_config, ConfigLoader
     config = load_config()
     
     new_token = secrets.token_urlsafe(32)
@@ -227,6 +219,9 @@ def token_new():
 @spells_app.command("list")
 def spells_list():
     """List available spells in the Grimoire."""
+    from rich.table import Table
+    from auric.core.config import load_config
+    from auric.spells.tool_registry import ToolRegistry
     try:
         config = load_config()
         registry = ToolRegistry(config)
@@ -253,6 +248,7 @@ def spells_list():
 @spells_app.command("create")
 def spells_create(name: str):
     """Create a new spell scaffold."""
+    from pathlib import Path
     import re
     if not re.match(r"^[a-zA-Z0-9_-]+$", name):
         console.print("[red]Invalid spell name. Use alphanumeric, hyphens, or underscores.[/red]")
@@ -367,6 +363,10 @@ Files not intended to be loaded into context, but rather used within the output 
 @spells_app.command("reload")
 def spells_reload():
     """Reload spells in the running Daemon (and local index)."""
+    import urllib.request
+    import urllib.error
+    from auric.core.config import load_config
+    from auric.spells.tool_registry import ToolRegistry
     # 1. Update local index
     try:
         config = load_config()
@@ -417,6 +417,7 @@ def dashboard_main(ctx: typer.Context):
 def dashboard_start():
     """Start the dashboard UI."""
     import webbrowser
+    from auric.core.config import load_config
     config = load_config()
     host = config.gateway.host
     port = config.gateway.port
@@ -435,6 +436,7 @@ def dashboard_stop():
 @config_app.command("get")
 def config_get(key: str):
     """Get a configuration value."""
+    from auric.core.config import load_config
     config = load_config()
     data = config.model_dump(mode='json')
     
@@ -461,6 +463,8 @@ def config_get(key: str):
 @config_app.command("set")
 def config_set(key: str, value: str, is_json: bool = typer.Option(False, "--json", help="Parse value as JSON5")):
     """Set a configuration value."""
+    import json5
+    from auric.core.config import load_config, AuricConfig, ConfigLoader
     config = load_config()
     data = config.model_dump(mode='json')
     
@@ -511,6 +515,7 @@ def config_set(key: str, value: str, is_json: bool = typer.Option(False, "--json
 @config_app.command("unset")
 def config_unset(key: str):
     """Remove a configuration key."""
+    from auric.core.config import load_config, AuricConfig, ConfigLoader
     config = load_config()
     data = config.model_dump(mode='json')
     
@@ -541,6 +546,7 @@ def config_unset(key: str):
 @pairing_app.command("list")
 def pairing_list(pact: str = typer.Argument(..., help="The pact name (e.g., discord)")):
     """List pending pairing requests."""
+    from rich.table import Table
     from auric.core.pairing import PairingManager
     
     try:
@@ -592,6 +598,7 @@ def pairing_approve(
 @memory_app.command("reindex")
 def memory_reindex():
     """Manually trigger a full re-indexing of the Grimoire and Memories."""
+    import asyncio
     from auric.memory.librarian import GrimoireLibrarian
     
     async def run_reindex():
@@ -664,6 +671,7 @@ def focus_get(
 @sessions_app.command("list")
 def sessions_list():
     """List all active sessions and closed contexts."""
+    from rich.table import Table
     from auric.core.session_router import SessionRouter
     
     try:

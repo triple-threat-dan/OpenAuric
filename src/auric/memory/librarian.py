@@ -194,20 +194,40 @@ class GrimoireLibrarian:
             logger.error(f"Librarian: Failed to index {file_path}: {e}")
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
-        """Simple text chunking with overlap."""
-        if len(text) < chunk_size:
+        """Text chunking with overlap respecting semantic boundaries (paragraphs, lines, words)."""
+        if len(text) <= chunk_size:
             return [text]
 
         chunks = []
         start = 0
         while start < len(text):
-            end = min(start + chunk_size, len(text))
-            chunks.append(text[start:end])
-
-            if end == len(text):
+            end = start + chunk_size
+            
+            if end >= len(text):
+                chunks.append(text[start:])
                 break
 
-            start += (chunk_size - overlap)
+            # Define the window where we look for a good split point
+            # Look in the last 20% of the proposed chunk
+            window_start = max(start, end - int(chunk_size * 0.2))
+            
+            # Find the best split point in order of preference: paragraph, line, word
+            split_idx = text.rfind('\n\n', window_start, end)
+            if split_idx == -1:
+                split_idx = text.rfind('\n', window_start, end)
+            if split_idx == -1:
+                split_idx = text.rfind(' ', window_start, end)
+
+            if split_idx != -1 and split_idx > start:
+                # We found a semantic boundary
+                chunks.append(text[start:split_idx].strip())
+                # Move start to just after the split, minus the overlap
+                # We ensure overlap doesn't push us backwards past our current start
+                start = max(start + 1, split_idx - overlap)
+            else:
+                # Fallback: hard split
+                chunks.append(text[start:end])
+                start += (chunk_size - overlap)
 
         return chunks
 

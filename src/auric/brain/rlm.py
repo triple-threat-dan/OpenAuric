@@ -131,21 +131,21 @@ class RLMEngine:
             
         system_prompt = (
             "You are the Heartbeat Monitor for OpenAuric.\n"
-            "**GOAL**: Determine if the provided `HEARTBEAT.md` content contains *actionable* tasks *for Current Time*.\n\n"
+            "**GOAL**: Determine if the provided `HEARTBEAT.md` content contains **any** *actionable* tasks *for Current Time*.\n\n"
             "**CONSTRAINTS**:\n"
-            "1. **Ignore Structure**: Ignore HTML comments (`<!-- -->`), headers (`#`), and whitespace.\n"
-            "2. **Check for Actionable Text**: Look for instructions (e.g., 'Check database', 'Every morning...').\n"
+            "1. **Ignore Structure**: Ignore HTML comments (`<!-- -->`), and headers (`#`).\n"
+            "2. **Check for Actionable Tasks**: Look for instructions (e.g., '- Check database', '- Every morning...').\n"
             "3. **STRICT TIME CHECK**: Compare the task's time condition against Current Time.\n"
             "   - If task says '9am' and it is 00:30 -> NO.\n"
             "   - If task says 'Every evening' and it is Morning -> NO.\n"
             "   - If task says 'at 5pm' and it is 5:00pm -> YES.\n"
             "4. **Output Format**: \n"
-            "   - Scan tasks ONE BY ONE.\n"
+            "   - Scan ALL tasks.\n"
             "   - **STOP IMMEDIATELY** if you find a task that is actionable NOW.\n"
             "   - Output: 'Task: [Brief Text] -> [Analysis] -> VERDICT: YES'\n"
             "   - If no tasks are actionable after scanning all, output 'VERDICT: NO'."
             "5. **Output Format**: ONLY output the VERDICT. No other text (e.g. 'VERDICT: YES' or 'VERDICT: NO').\n"
-            f"Current Time: {now.strftime('%Y-%m-%d %H:%M')} ({period})\n\n"
+            f"Current Time: {now.astimezone().strftime('%Y-%m-%d %I:%M %p %Z')} ({period})\n\n"
         )
 
         messages = [
@@ -156,9 +156,9 @@ class RLMEngine:
         try:
             response = await self.gateway.chat_completion(
                 messages=messages,
-                tier="heartbeat_model", 
+                tier="fast_model", 
                 # Allow enough tokens for a single positive analysis or a few negatives
-                max_tokens=700 
+                max_tokens=1000 
             )
             
             # Track cost for this lean check too
@@ -198,18 +198,9 @@ class RLMEngine:
 
 
         # 2. Focus-Shift: Gather Context
-        # We query the librarian for relevant knowledge based on the user query
-        search_results = self.librarian.search(user_query)
-        
-        # Extract just the content string for the context
+        # We NO LONGER automatically query the librarian for relevant knowledge.
+        # The agent must explicitly use the memory_search tool if it needs past context.
         snippets = []
-        if search_results:
-            for res in search_results:
-                if isinstance(res, dict) and "content" in res:
-                    snippets.append(str(res["content"]))
-                else:
-                    # Fallback for non-dict results or missing content key
-                    snippets.append(str(res))
         
         task_context = TaskContext(
             query=user_query,
@@ -497,7 +488,7 @@ class RLMEngine:
 
         # 5. The Tools
         parts.append("## Available Tools\nYou have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names that were not given to you. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**\n")
-        parts.append("- **memory_search**: Use this to find information in your Grimoire/Memories. It uses semantic search to find relevant snippets. PREFER this over reading files directly when looking for information.")
+        parts.append("- **memory_search**: CRITICAL: You must actively use this tool to search your Grimoire/Memories for past context, user instructions, or task status if you need them. They are NOT provided automatically. It uses semantic search to find relevant snippets. PREFER this over reading files directly when looking for information.")
         parts.append("- **read_file**: Use this only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
 
         # Inject Pact Tools

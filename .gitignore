@@ -10,3 +10,10 @@ test_results.txt
 .auric/ 
 .gemini/
 .notes.md
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+test_output.txt
+test_results.txt

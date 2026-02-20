@@ -249,7 +249,7 @@ class TestHeartbeatOptimization:
         assert result is True
         
         call_args = mock_gateway.chat_completion.call_args
-        assert call_args[1]['tier'] == 'heartbeat_model'
+        assert call_args[1]['tier'] == 'fast_model'
 
     @pytest.mark.asyncio
     async def test_heartbeat_return_false(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
