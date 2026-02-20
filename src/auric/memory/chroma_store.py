@@ -61,6 +61,21 @@ class ChromaStore(VectorStore):
             logger.error(f"Failed to upsert {id}: {e}")
             raise
 
+    def batch_upsert(self, ids: List[str], contents: List[str], metadatas: List[Dict[str, Any]], embeddings: List[List[float]]) -> None:
+        """
+        Insert or update multiple documents in a single call.
+        """
+        try:
+            self.collection.upsert(
+                ids=ids,
+                documents=contents,
+                metadatas=metadatas,
+                embeddings=embeddings,
+            )
+        except Exception as e:
+            logger.error(f"Failed to batch upsert {len(ids)} documents: {e}")
+            raise
+
     def search(self, query_embedding: List[float], n_results: int = 5) -> List[Dict[str, Any]]:
         """
         Search using query embedding.

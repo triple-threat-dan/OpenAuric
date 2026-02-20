@@ -15,6 +15,13 @@ class VectorStore(ABC):
         pass
 
     @abstractmethod
+    def batch_upsert(self, ids: List[str], contents: List[str], metadatas: List[Dict[str, Any]], embeddings: List[List[float]]) -> None:
+        """
+        Insert or update multiple documents in a single call.
+        """
+        pass
+
+    @abstractmethod
     def search(self, query_embedding: List[float], n_results: int = 5) -> List[Dict[str, Any]]:
         """
         Search for similar documents using a query embedding.

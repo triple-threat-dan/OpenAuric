@@ -122,6 +122,7 @@ class LLMGateway:
                         model=model,
                         messages=messages,
                         api_key=api_key,
+                        num_retries=3,
                         **kwargs
                     )
             else:
@@ -131,6 +132,7 @@ class LLMGateway:
                     model=model,
                     messages=messages,
                     api_key=api_key,
+                    num_retries=3,
                     **kwargs
                 )
             
