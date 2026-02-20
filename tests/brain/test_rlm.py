@@ -39,6 +39,7 @@ def mock_tool_registry():
     registry = Mock(spec=ToolRegistry)
     registry.get_tools_schema = Mock(return_value=[])
     registry.get_spells_context = Mock(return_value="")
+    registry.get_internal_tools_context = Mock(return_value="")
     registry._internal_tools = {}
     registry._spells = {}
     # Make execute_tool an async mock

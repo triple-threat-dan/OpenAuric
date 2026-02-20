@@ -72,61 +72,46 @@ class ToolRegistry:
                 if skill_file.exists():
                     self._load_single_spell(skill_file)
         
-        logger.info(f"Loaded {len(self._spells)} spells.")
-        logger.info(f"Loaded {len(self._spells)} spells.")
+        logger.debug(f"Loaded {len(self._spells)} spells.")
 
     def _load_single_spell(self, path: Path):
         """Parses a single SKILL.md and registers the spell."""
         try:
             content = path.read_text(encoding="utf-8")
-            # Simple YAML frontmatter parser
-            if content.startswith("---"):
-                end_frontmatter = content.find("---", 3)
-                if end_frontmatter != -1:
-                    frontmatter_str = content[3:end_frontmatter]
+            
+            # Use regex to find frontmatter between --- markers
+            parts = re.split(r"^---$", content, maxsplit=2, flags=re.MULTILINE)
+            
+            if len(parts) >= 3:
+                frontmatter_str = parts[1].strip()
+                instructions = parts[2].strip()
+                
+                meta = {}
+                # Extract key: value pairs, potentially spanning multiple lines (not indented)
+                matches = re.finditer(r"^(\w+):\s*(.*?)(?=\n\w+:|\Z)", frontmatter_str, re.DOTALL | re.MULTILINE)
+                for m in matches:
+                    meta[m.group(1)] = m.group(2).strip()
+                
+                if "name" in meta:
+                    name = meta["name"]
                     
-                    meta = {}
-                    for line in frontmatter_str.splitlines():
-                        if ":" in line:
-                            key, val = line.split(":", 1)
-                            meta[key.strip()] = val.strip()
-                    
-                    if "name" in meta:
-                        name = meta["name"]
-                        instructions = content[end_frontmatter+3:].strip()
-                        
-                        # Parse parameters if available (using a simple YAML-like parser for the dict structure)
-                        # Since we don't have PyYAML, we'll need to rely on the user providing valid JSON-like structure 
-                        # or simple key-value pairs if we want to avoid complex parsing.
-                        # Wait, the meta logic above only handles simple key:value lines.
-                        # Let's import yaml if available, or just fallback to the hardcoded default for now
-                        # but ideally we should parse the 'parameters' block.
-                        
-                        # Actually, better yet, let's just use json.loads if the user provides parameters as a JSON string in a specific field?
-                        # Or, since we want to support this properly, let's assume we can add PyYAML to dependencies later.
-                        # For now, let's look for a hacky way or just use a `parameters_json` field in frontmatter for safety.
-                        
-                        # Pivot: As I cannot easily add PyYAML dependency right now without user permission/restart.
-                        # I will modify the `SKILL.md` to use a `parameters_json` field which I can parse with json.loads.
-                        # This is robust and doesn't require new deps.
-                        
-                        parameters = {}
-                        if "parameters_json" in meta:
-                            try:
-                                parameters = json.loads(meta["parameters_json"])
-                            except json.JSONDecodeError:
-                                logger.error(f"Failed to parse parameters_json for {name}")
+                    parameters = {}
+                    if "parameters_json" in meta:
+                        try:
+                            parameters = json.loads(meta["parameters_json"])
+                        except json.JSONDecodeError:
+                            logger.error(f"Failed to parse parameters_json for {name}")
 
-                        spell_data = {
-                            "name": name,
-                            "description": meta.get("description", "No description"),
-                            "path": path.parent,
-                            "instructions": instructions,
-                            "script": self._find_script(path.parent),
-                            "parameters": parameters
-                        }
-                        self._spells[name] = spell_data
-                        logger.debug(f"Loaded spell: {name}")
+                    spell_data = {
+                        "name": name,
+                        "description": meta.get("description", "No description"),
+                        "path": path.parent,
+                        "instructions": instructions,
+                        "script": self._find_script(path.parent),
+                        "parameters": parameters
+                    }
+                    self._spells[name] = spell_data
+                    logger.debug(f"Loaded spell: {name}")
         except Exception as e:
             logger.error(f"Failed to load spell from {path}: {e}")
 
@@ -140,6 +125,25 @@ class ToolRegistry:
                 if script.exists():
                     return script
         return None
+
+    def get_internal_tools_context(self) -> str:
+        """
+        Generates a summary of available internal tools for the system prompt.
+        """
+        if not self._internal_tools:
+            return ""
+
+        lines = ["## Internal Standard Tools", ""]
+        for name, func in self._internal_tools.items():
+            doc = inspect.getdoc(func) or "No description available."
+            # Only take the first paragraph of the docstring for brevity in text
+            summary = doc.split("\n\n")[0].strip()
+            lines.append(f"- **{name}**: {summary}")
+        
+        lines.append("- **CRITICAL**: You must actively use the memory_search tool to search your Grimoire/Memories for past context, user instructions, or task status. They are NOT provided automatically. PREFER this over reading files directly.")
+        lines.append("- Use the read_file tool only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
+
+        return "\n".join(lines)
 
     def get_spells_context(self) -> str:
         """
@@ -546,7 +550,21 @@ class ToolRegistry:
         Uses introspection of type hints and docstrings.
         """
         name = func.__name__
-        doc = inspect.getdoc(func) or "No description available."
+        full_doc = inspect.getdoc(func) or "No description available."
+        
+        # Simple docstring parser to extract main description and parameter descriptions
+        doc_parts = re.split(r'\n\s*(?:Args|Parameters):\s*\n', full_doc, flags=re.IGNORECASE)
+        main_doc = doc_parts[0].strip()
+        
+        param_descriptions = {}
+        if len(doc_parts) > 1:
+            # Look for "param_name: description" or "param_name (type): description"
+            param_section = doc_parts[1]
+            matches = re.finditer(r'^\s*(\w+)(?:\s*\(.*?\))?:\s*(.*)', param_section, re.MULTILINE)
+            for match in matches:
+                p_name, p_desc = match.groups()
+                param_descriptions[p_name] = p_desc.strip()
+
         sig = inspect.signature(func)
         
         parameters = {
@@ -573,7 +591,7 @@ class ToolRegistry:
             
             parameters["properties"][param_name] = {
                 "type": param_type,
-                "description": param_name
+                "description": param_descriptions.get(param_name, param_name)
             }
             
             if param.default == inspect.Parameter.empty:
@@ -581,6 +599,6 @@ class ToolRegistry:
                 
         return {
             "name": name,
-            "description": doc,
+            "description": main_doc,
             "parameters": parameters
         }

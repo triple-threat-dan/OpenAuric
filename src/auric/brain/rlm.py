@@ -232,30 +232,31 @@ class RLMEngine:
 
         final_response = ""
 
-        # Collect Tool Schemas
-        tools_schemas = []
-        if self.tool_registry:
-            tools_schemas.extend(self.tool_registry.get_tools_schema())
-        
-        # Inject Pact Tools
-        if self.pact_manager:
-            tools_schemas.extend(self.pact_manager.get_tools_schema())
-        
-        # Add spawn_sub_agent only if there's room in the recursion budget.
-        # Sub-agents near max depth should NOT see this tool, forcing them to
-        # produce content directly instead of endlessly delegating.
-        max_depth = self.config.agents.max_recursion
-        if depth + 1 <= max_depth:
-            tools_schemas.append(self._get_recursion_tool_schema())
-        
-        # If no tools, pass None
-        tools_arg = tools_schemas if tools_schemas else None
-
         while current_turn < max_turns:
             current_turn += 1
             
-            # Dynamic Context Refresh: Re-assemble system prompt to capture state changes (e.g. FOCUS.md edits)
-            # This allows the agent to "see" its own writes without needing to read the file back.
+            # Dynamic Context Refresh: Re-assemble system prompt and tool schemas to capture state changes 
+            # (e.g. new spells created, FOCUS.md edits).
+            if self.tool_registry:
+                self.tool_registry.load_spells()
+            
+            # Re-collect Tool Schemas
+            tools_schemas = []
+            if self.tool_registry:
+                tools_schemas.extend(self.tool_registry.get_tools_schema())
+            
+            # Inject Pact Tools
+            if self.pact_manager:
+                tools_schemas.extend(self.pact_manager.get_tools_schema())
+            
+            # Add spawn_sub_agent only if there's room in the recursion budget.
+            max_depth = self.config.agents.max_recursion
+            if depth + 1 <= max_depth:
+                tools_schemas.append(self._get_recursion_tool_schema())
+            
+            # If no tools, pass None
+            tools_arg = tools_schemas if tools_schemas else None
+
             system_prompt = self._assemble_system_prompt(task_context)
             messages[0]["content"] = system_prompt
             
@@ -483,13 +484,23 @@ class RLMEngine:
         if memory_text := self._read_section(AURIC_ROOT / "memories" / "MEMORY.md"):
             parts.append(memory_text)
 
-        if self.tool_registry:
-            parts.append(self.tool_registry.get_spells_context())
 
-        # 5. The Tools
-        parts.append("## Available Tools\nYou have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names that were not given to you. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**\n")
-        parts.append("- **memory_search**: CRITICAL: You must actively use this tool to search your Grimoire/Memories for past context, user instructions, or task status if you need them. They are NOT provided automatically. It uses semantic search to find relevant snippets. PREFER this over reading files directly when looking for information.")
-        parts.append("- **read_file**: Use this only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
+        # 5. Tool Usage Instructions
+        tools_intro = [
+            "## Tool Usage Instructions",
+            "You have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**",
+            ""
+        ]
+
+        if task_context.depth + 1 <= self.config.agents.max_recursion:
+            tools_intro.append("- **spawn_sub_agent**: Delegates a complex sub-task to a recursive sub-agent. Use ONLY for tasks requiring independent multi-step reasoning or long-form content generation.")
+
+        parts.append("\n".join(tools_intro))
+
+        # Inject internal tools and spells
+        if self.tool_registry:
+            parts.append(self.tool_registry.get_internal_tools_context())
+            parts.append(self.tool_registry.get_spells_context())
 
         # Inject Pact Tools
         if self.pact_manager:

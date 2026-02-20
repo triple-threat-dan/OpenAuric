@@ -14,7 +14,7 @@ Current issues:
 - [x] gemini cli integration
 - [ ] emotionsss. small model, runs every prompt or task, a global json state of the emotions, a method to inject that state into the system prompt for each call to the LLM
 - [ ] have the heartbeat logic update the emotional state too (gradually calm the agent)
-- [ ] I am not sure that heartbeats are working. Let's add a table called heartbeats to the database and log them there. Let's also add an auric heartbeat command so you can manually trigger one from the cli.
+- [x] I am not sure that heartbeats are working. Let's add a table called heartbeats to the database and log them there. Let's also add an auric heartbeat command so you can manually trigger one from the cli.
 - [x] Daily memories aren't implemented? And need to be... `yyyy-mm-dd.md`, should be saved when important events happen. Perhaps after every interaction a small model is loaded up to summarize recent events and pick important bits to append to the file
 - [x] allow multiple discord users to talk to aliss by having the user messages be prepended with the name of the sender so she knows which user(s) she's talking to
 - [ ] a re-runnable onboarding process via the cli that allows users to set tokens, select pacts, set the name of the agent, etc. 
@@ -35,8 +35,25 @@ Current issues:
 - [x] SECURITY. Add token for the frontend ui.
 - [x] SECURITY. Add pairing for discord integration.
 - [ ] add support for specialist agents/models for the rlm to call (coding specialists, RP/chat specialists, etc.)
-- [ ] sessions still aren't closing when I am trying to force them to. We need to review how sessions are routed, especially from DMs to general chats and vice-versa. 
+- [x] sessions still aren't closing when I am trying to force them to. We need to review how sessions are routed, especially from DMs to general chats and vice-versa. 
 - [x] logs... we need to log *everything*. We need an everything log that logs every single tool call, chat, response, llm call, etc. in JSONL format.
 - [ ] need to add a config/settings page on the frontend ui to allow users to configure their pacts, tokens, etc. Basically a UI for the json config.
 - [ ] We need to add a way to search the logs and memories, perhaps ui pages 
 - [ ] Add per-file unit tests for all the modules, get test coverage above 80%
+- [ ] Look into changing the name in LLMGateway to something more specific so it shows up in stats on OpenRouter    
+- [ ] Optimize/audit ALL memory prompts to prevent the agent from saving things to the wrong places
+- [ ] enable/optimize concurrency for the agent so it can do multiple things at once and handle multiple chat messages at once
+- [ ] optimize heartbeats to only spin up a lean system prompt to check for heartbeat tasks *first*, then ONLY delegate those tasks to the LLM if there are any to do.
+- [ ] add more metadata to discord messages, such as the user that a person is responding to, etc., so the bot has more context when responding
+- [ ] heartbeat messages aren't firing when the heartbeat task is for a specific time (e.g. 9am) instead of a range of times. Also, the agent keeps thinking it is a different time than it is...
+- [ ] add a way to set the timezone for the agent, so it knows what time it is.
+- [ ] create an optimized solution for the agent to handle multiple tasks at once, such as a priority queue or similar.
+- [ ] implement some sort of audience detection system so the agent can know when someone is talking to it (versus just mentioning its name) and react accordingly. 
+- [ ] move pacts to a pacts folder
+- [ ] try to simplify or split up the rlm.py file
+- [x] fix issue: agent can't see its spells it just crafted or internal tools 
+- [ ] stronger human-in-the-loop for critical tasks... have the agent show their task plan and ask for confirmation after it creates a plan in FOCUS.md, and proceed only if the user confirms the plan and tells them to proceed. If the user declines, the agent should cancel and reset the FOCUS.md file and not proceed with the task.
+- [ ] stronger human-in-the-loop for critical operations... such as deleting files, running commands, etc. The agent should ask for confirmation before performing any critical step.
+- [ ] discern when agent is being addressed vs. only referred to
+- [ ] add a "get_spells" tool to get the list of spells available to the agent
+- [ ] add a "get_pacts" tool to get the list of pacts available to the agent
