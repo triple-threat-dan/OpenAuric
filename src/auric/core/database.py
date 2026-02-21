@@ -252,6 +252,16 @@ class AuditLogger:
             session.add(interaction)
             await session.commit()
 
+    async def close(self):
+        """Disposes of the engine and connection pool."""
+        await self.engine.dispose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
+
     async def log_heartbeat(self, status: str = "ALIVE", meta: Optional[Dict[str, Any]] = None) -> None:
         """Logs a system heartbeat."""
         metadata_json = None
