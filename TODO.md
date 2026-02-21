@@ -24,7 +24,7 @@ Current issues:
 - [x] previous session should load when the user opens the app instead of a new session automatically
 - [ ] support sending images to the agent
 - [ ] support sending multilines in the chatbox
-- [ ] auric -m "send a message from the CLI"
+- [x] auric -m "send a message from the CLI"
 - [x] I think auric might have problems with the workspace, perhaps move workspace and install dir to a subfolder in the app directory
 - [ ] fix it so I don't have to do python -m auric.cli anymore and can just do auric <command>
 - [ ] look into auric status
@@ -34,6 +34,8 @@ Current issues:
 - [ ] add support for receiving files from the agent
 - [x] SECURITY. Add token for the frontend ui.
 - [x] SECURITY. Add pairing for discord integration.
+- [ ] SECURITY. Add hooks for external integrations to allow users to add their own security measures/intercept certain events.
+- [ ] enable the ability to export spells as claude code/gemini-cli style skill files
 - [ ] add support for specialist agents/models for the rlm to call (coding specialists, RP/chat specialists, etc.)
 - [x] sessions still aren't closing when I am trying to force them to. We need to review how sessions are routed, especially from DMs to general chats and vice-versa. 
 - [x] logs... we need to log *everything*. We need an everything log that logs every single tool call, chat, response, llm call, etc. in JSONL format.
@@ -41,7 +43,7 @@ Current issues:
 - [ ] We need to add a way to search the logs and memories, perhaps ui pages 
 - [ ] Add per-file unit tests for all the modules, get test coverage above 80%
 - [ ] Look into changing the name in LLMGateway to something more specific so it shows up in stats on OpenRouter    
-- [ ] Optimize/audit ALL memory prompts to prevent the agent from saving things to the wrong places
+- [x] Optimize/audit ALL memory prompts to prevent the agent from saving things to the wrong places
 - [ ] enable/optimize concurrency for the agent so it can do multiple things at once and handle multiple chat messages at once
 - [ ] optimize heartbeats to only spin up a lean system prompt to check for heartbeat tasks *first*, then ONLY delegate those tasks to the LLM if there are any to do.
 - [ ] add more metadata to discord messages, such as the user that a person is responding to, etc., so the bot has more context when responding
@@ -55,5 +57,13 @@ Current issues:
 - [ ] stronger human-in-the-loop for critical tasks... have the agent show their task plan and ask for confirmation after it creates a plan in FOCUS.md, and proceed only if the user confirms the plan and tells them to proceed. If the user declines, the agent should cancel and reset the FOCUS.md file and not proceed with the task.
 - [ ] stronger human-in-the-loop for critical operations... such as deleting files, running commands, etc. The agent should ask for confirmation before performing any critical step.
 - [ ] discern when agent is being addressed vs. only referred to
-- [ ] add a "get_spells" tool to get the list of spells available to the agent
+- [ ] add a "get_spells" tool to get   the list of spells available to the agent
 - [ ] add a "get_pacts" tool to get the list of pacts available to the agent
+- [ ] sessions are still awkward to work with. We need the ability to manage sessions better and gracefully close them when the user is done with them.
+- [ ] add a way to backup the agent's state, memories, etc. 
+- [ ] add a way to restore the agent's state, memories, etc. 
+- [ ] ability to restart the agent from the cli
+- [ ] update script
+- [ ] Ollama support
+- [ ] only allow tool calling by sub_llm
+- [ ] have the agent react with an emoji via discord to acknowledge receipt of a message

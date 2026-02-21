@@ -65,24 +65,48 @@ This script will:
 3. Install dependencies in a dedicated virtual environment.
 4. Alias the `auric` command in your shell.
 
+## 🚀 Quick Start
+
+1. **Awaken the Daemon**: Start the agent in the background.
+   ```bash
+   auric start
+   ```
+2. **Set your API Key**: (e.g., for Gemini)
+   ```bash
+   auric config set keys.gemini YOUR_API_KEY
+   ```
+3. **Invoke the Warlock**: Send your first command directly from the terminal.
+   ```bash
+   auric -m "Who are you?"
+   ```
+4. **Open the Dashboard**: Access the web UI to visualize thoughts and memory.
+   ```bash
+   auric dashboard
+   ```
+
 ---
 
 ## 🕹️ Usage
 
 ### Core Commands
 
-Manage the daemon process using the CLI:
+Manage the daemon and interact with the agent using the CLI:
 
 ```bash
-# Awaken the agent (starts the background daemon)
+# Start the background daemon
 auric start
 
-# Check connection status to your Patron (TODO)
-auric status
+# Send a message and wait for a response (Shortcut)
+auric -m "Hello Auric!"
 
-# Put the agent to sleep (Stops daemon & triggers Dream Cycle)
+# Send a message using the explicit command
+auric message "What's on my schedule?"
+
+# Stop the daemon (triggers Dream Cycle)
 auric stop
 
+# Restart the daemon
+auric restart
 ```
 
 ### Configuration

@@ -20,6 +20,8 @@ router = APIRouter(dependencies=[Depends(verify_token)])
 
 class ChatRequest(BaseModel):
     message: str
+    source: str = "WEB"
+    session_id: str = None
 
 class StatusResponse(BaseModel):
     focus_state: Dict[str, Any]
@@ -349,8 +351,8 @@ async def chat(request: Request, chat_req: ChatRequest):
     msg = {
         "level": "USER",
         "message": chat_req.message,
-        "source": "WEB",
-        "session_id": getattr(request.app.state, "current_session_id", None)
+        "source": chat_req.source,
+        "session_id": chat_req.session_id or getattr(request.app.state, "current_session_id", None)
     }
     await command_bus.put(msg)
     return {"status": "Message sent"}

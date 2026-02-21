@@ -27,6 +27,128 @@ console = Console()
 
 PID_FILE = AURIC_ROOT / "auric.pid"
 
+def send_message(text: str, wait: bool = True):
+    """Internal helper to send a message to the daemon API and optionally wait for response."""
+    import urllib.request
+    import json
+    import time
+    from auric.core.config import load_config
+    
+    config = load_config()
+    port = config.gateway.port
+    token = config.gateway.web_ui_token
+    
+    # 1. Get Initial State (to know what's new)
+    session_id = None
+    last_msg_count = 0
+    try:
+        status_url = f"http://127.0.0.1:{port}/api/status"
+        req = urllib.request.Request(status_url, method="GET")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            status_data = json.loads(resp.read().decode())
+            session_id = status_data.get("current_session_id")
+            chat_history = status_data.get("chat_history", [])
+            last_msg_count = len(chat_history)
+    except Exception:
+        # Fallback if status fails, we'll try to just send
+        pass
+
+    # 2. Send Message
+    url = f"http://127.0.0.1:{port}/api/chat"
+    try:
+        data = json.dumps({"message": text, "source": "CLI", "session_id": session_id}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status != 200:
+                 console.print(f"[red]Error sending message: {response.status}[/red]")
+                 return
+    except Exception as e:
+        console.print(f"[yellow]Daemon not reachable or error occurred: {e}[/yellow]")
+        console.print("[dim]Use 'auric start' to launch the agent daemon.[/dim]")
+        return
+
+    if not wait or not session_id:
+        console.print(f"[green]Message sent: {text}[/green]")
+        return
+
+    # 3. Poll for Response
+    console.print(f"[dim]Sent: {text}[/dim]")
+    console.print("[dim italic]Agent is thinking...[/dim italic]")
+    
+    seen_ids = set() # Optional: if we had message IDs in history
+    # Since we don't have IDs in the web_chat_history buffer yet, we use index
+    
+    start_time = time.time()
+    timeout = 120 # 2 minutes max for a complex thought process
+    
+    try:
+        while time.time() - start_time < timeout:
+            history_url = f"http://127.0.0.1:{port}/api/status"
+            req = urllib.request.Request(history_url, method="GET")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                status_data = json.loads(resp.read().decode())
+                history = status_data.get("chat_history", [])
+                
+                # Check for new messages
+                if len(history) > last_msg_count:
+                    new_messages = history[last_msg_count:]
+                    for msg in new_messages:
+                        role = msg.get("level")
+                        content = msg.get("message", "")
+                        
+                        if role in ("THOUGHT", "TOOL"):
+                            # Only print if it's a tool call or significant thought
+                            # Clean up ANSI or weird formatting if needed
+                            console.print(f"[dim]⚡ {content}[/dim]")
+                        elif role == "AGENT":
+                            console.print(f"\n[bold green]ALISS:[/bold green] {content}")
+                            return # Success!
+                        elif role == "ERROR":
+                            console.print(f"[bold red]Error:[/bold red] {content}")
+                            return
+                            
+                    last_msg_count = len(history)
+            
+            time.sleep(0.5)
+            
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped waiting for response. The agent is still thinking in the background.[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]Error while waiting for response: {e}[/red]")
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    message: str = typer.Option(None, "--message", "-m", help="Send a message directly to the agent"),
+    wait: bool = typer.Option(True, "--wait/--no-wait", "-w/-W", help="Wait for the agent's response")
+):
+    """
+    OpenAuric: The Recursive Agentic Warlock.
+    """
+    if message:
+        send_message(message, wait=wait)
+        raise typer.Exit()
+    elif ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
+
+@app.command()
+def message(
+    content: str = typer.Argument(..., help="The message content to send to the agent"),
+    wait: bool = typer.Option(True, "--wait/--no-wait", "-w/-W", help="Wait for the agent's response")
+):
+    """Send a message to the agent."""
+    send_message(content, wait=wait)
+
 # --- Daemon Commands ---
 
 @app.command()

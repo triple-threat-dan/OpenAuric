@@ -332,7 +332,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      web_log_buffer.append(f"[{level}] {text}")
                      
                      # Chat History filters
-                     if level in ("USER", "AGENT", "THOUGHT", "HEARTBEAT"):
+                     if level in ("USER", "AGENT", "THOUGHT", "HEARTBEAT", "TOOL"):
                           # Only show non-heartbeat messages in the Web UI Chat
                           # Heartbeats are still logged to DB below
                           if msg.get("source") != "HEARTBEAT":
@@ -436,7 +436,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      await internal_bus.put({
                          "level": "THOUGHT",
                          "message": f"Thinking on: {user_msg}",
-                         "source": "BRAIN"
+                         "source": "BRAIN",
+                         "session_id": session_id
                      })
                      
                      logger.info(f"Thinking on: {user_msg}")
@@ -473,7 +474,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          response = await rlm_engine.think(user_msg, session_id=session_id, model_tier=model_tier)
                          
                          # Reply to Source
-                         if source in ["WEB", "HEARTBEAT"]: # Handle HEARTBEAT same as WEB for now logic-wise
+                         if source in ["WEB", "HEARTBEAT", "CLI"]: # Handle HEARTBEAT same as WEB for now logic-wise
                               await internal_bus.put({
                                   "level": "AGENT",
                                   "message": response,
