@@ -357,168 +357,170 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
 
     async def brain_loop():
         logger.info("Brain Loop started.")
+
+        async def process_item(item):
+            # Identify Message Source
+            user_msg = None
+            source = None
+            sender_id = None
+            platform = None
+            session_id = item.get("session_id") if isinstance(item, dict) else None
+            
+            if isinstance(item, dict):
+                if item.get("level") == "USER":
+                     # Message from Web UI or Heartbeat
+                     user_msg = item.get("message")
+                     source = item.get("source", "WEB") # Respect source
+                elif item.get("type") == "user_query":
+                     # Message from Pact (Discord/Telegram)
+                     event = item.get("event")
+                     if event:
+                         # Prepend User Identity
+                         sender_name = event.metadata.get("author_display") or event.metadata.get("author_name") or "User"
+                         user_msg = f"{sender_name}: {event.content}"
+                         
+                         source = "PACT"
+                         platform = event.platform
+                         sender_id = event.sender_id
+            
+            if user_msg:
+                 # 0. Echo User Message to Internal Bus (for History/Console)
+                 # Inject Session ID from Global State if available
+                 current_sid = getattr(api_app.state, "current_session_id", None)
+                 
+                 # Session Management for PACTs
+                 if source == "PACT" and not session_id:
+                     # Use SessionRouter to get consistent but rotatable ID
+                     # Context is platform:sender_id (e.g. discord:123456789)
+                     context_key = f"{platform}:{sender_id}"
+                     session_id = session_router.get_active_session_id(context_key)
+                     
+                     # If session_id is None, the context was explicitly closed.
+                     # Create a brand new session (never reactivate a closed one).
+                     if session_id is None:
+                         logger.info(f"Context '{context_key}' was closed. Creating fresh session.")
+                         session_id = session_router.start_new_session(context_key)
+                     
+                     # Ensure Session Exists in DB (metadata update)
+                     if api_app.state.audit_logger:
+                         existing = await api_app.state.audit_logger.get_session(session_id)
+                         if not existing:
+                             # Generate Name
+                             name = f"Pact Session {session_id[:8]}"
+                             if platform == "discord" and isinstance(item, dict) and "event" in item:
+                                 evt = item["event"]
+                                 if evt.metadata.get("is_dm"):
+                                      name = f"@{evt.metadata.get('author_display')}"
+                                 else:
+                                      name = f"#{evt.metadata.get('channel_name')}"
+                             
+                             logger.info(f"Creating new PACT session: {session_id} ({name})")
+                             await api_app.state.audit_logger.create_session(name=name, session_id=session_id)
+                 
+                 # If WEB/Other and no session, use current
+                 if not session_id:
+                     session_id = current_sid
+
+                 await internal_bus.put({
+                     "level": "HEARTBEAT" if source == "HEARTBEAT" else "USER",
+                     "message": user_msg,
+                     "source": source,
+                     "session_id": session_id # Pass it along for logging
+                 })
+
+                 # Feedback to UI
+                 await internal_bus.put({
+                     "level": "THOUGHT",
+                     "message": f"Thinking on: {user_msg}",
+                     "source": "BRAIN",
+                     "session_id": session_id
+                 })
+                 
+                 logger.info(f"Thinking on: {user_msg}")
+                 # Process with Engine
+                 try:
+                     # Extract session_id if available (from WEB) or use the one we injected
+                     # session_id = item.get("session_id") if isinstance(item, dict) else None # Already handled above
+                     
+                     # Trigger Typing Indicator if PACT
+                     if source == "PACT" and platform and sender_id:
+                         asyncio.create_task(pact_manager.trigger_typing(platform, sender_id))
+
+                     # Select model tier based on source
+                     model_tier = "heartbeat_model" if source == "HEARTBEAT" else "smart_model"
+                     
+                     # Optimization: Lean Heartbeat Check
+                     if source == "HEARTBEAT":
+                         try:
+                             # Use raw content if available (cleaner signal), else fallback to full message
+                             check_target = item.get("heartbeat_source_content", user_msg)
+                             is_necessary = await rlm_engine.check_heartbeat_necessity(check_target)
+                             if not is_necessary:
+                                 logger.info("🛌 Heartbeat skipped: No actionable tasks for this time.")
+                                 await internal_bus.put({
+                                     "level": "HEARTBEAT",
+                                     "message": "🛌 Heartbeat skipped: No actionable tasks for this time.",
+                                     "source": "BRAIN",
+                                     "session_id": session_id
+                                 })
+                                 return # Skip full think cycle
+                         except Exception as hb_err:
+                             logger.error(f"Heartbeat Check Failed: {hb_err}. Proceeding to think anyway.")
+
+                     response = await rlm_engine.think(user_msg, session_id=session_id, model_tier=model_tier, source=source)
+                     
+                     # Reply to Source
+                     if source in ["WEB", "HEARTBEAT", "CLI"]: # Handle HEARTBEAT same as WEB for now logic-wise
+                          await internal_bus.put({
+                              "level": "AGENT",
+                              "message": response,
+                              "source": "BRAIN",
+                              "session_id": session_id
+                          })
+                     elif source == "PACT":
+                         adapter = pact_manager.adapters.get(platform)
+                         if adapter and response:
+                             await adapter.send_message(sender_id, response)
+                             # Also log to internal bus for history
+                             await internal_bus.put({
+                                 "level": "AGENT",
+                                 "message": response,
+                                 "source": "BRAIN",
+                                 "session_id": session_id
+                             })
+                             
+                 except Exception as e:
+                     logger.error(f"Brain Error: {e}")
+                     error_msg = f"My mind is clouded: {e}"
+                     
+                     if source == "WEB":
+                         await internal_bus.put({"level": "AGENT", "message": error_msg, "source": "BRAIN"})
+                     elif source == "PACT":
+                         # Attempt to report error back to user
+                         try:
+                             adapter = pact_manager.adapters.get(platform)
+                             if adapter and sender_id:
+                                 await adapter.send_message(sender_id, f"⚠️ **Error**: {e}")
+                         except Exception as send_err:
+                             logger.error(f"Failed to send error to PACT: {send_err}")
+                         
+                         # Also log to console/web
+                         await internal_bus.put({
+                             "level": "ERROR", 
+                             "message": f"Error interacting with PACT ({platform}): {e}", 
+                             "source": "BRAIN"
+                         })
+                 finally:
+                     # Always stop typing indicator if it was a PACT
+                     if source == "PACT" and platform and sender_id:
+                         await pact_manager.stop_typing(platform, sender_id)
+
         while True:
             try:
                 # Wait for command
                 item = await command_bus.get()
                 print(f"🧠 Brain: Received item: {item.keys() if isinstance(item, dict) else item}")
-                
-                # Identify Message Source
-                user_msg = None
-                source = None
-                sender_id = None
-                platform = None
-                session_id = item.get("session_id") if isinstance(item, dict) else None
-                
-                if isinstance(item, dict):
-                    if item.get("level") == "USER":
-                         # Message from Web UI or Heartbeat
-                         user_msg = item.get("message")
-                         source = item.get("source", "WEB") # Respect source
-                    elif item.get("type") == "user_query":
-                         # Message from Pact (Discord/Telegram)
-                         event = item.get("event")
-                         if event:
-                             # Prepend User Identity
-                             sender_name = event.metadata.get("author_display") or event.metadata.get("author_name") or "User"
-                             user_msg = f"{sender_name}: {event.content}"
-                             
-                             source = "PACT"
-                             platform = event.platform
-                             sender_id = event.sender_id
-                
-                if user_msg:
-                     # 0. Echo User Message to Internal Bus (for History/Console)
-                     # Inject Session ID from Global State if available
-                     current_sid = getattr(api_app.state, "current_session_id", None)
-                     
-                     # Session Management for PACTs
-                     if source == "PACT" and not session_id:
-                         # Use SessionRouter to get consistent but rotatable ID
-                         # Context is platform:sender_id (e.g. discord:123456789)
-                         context_key = f"{platform}:{sender_id}"
-                         session_id = session_router.get_active_session_id(context_key)
-                         
-                         # If session_id is None, the context was explicitly closed.
-                         # Create a brand new session (never reactivate a closed one).
-                         if session_id is None:
-                             logger.info(f"Context '{context_key}' was closed. Creating fresh session.")
-                             session_id = session_router.start_new_session(context_key)
-                         
-                         # Ensure Session Exists in DB (metadata update)
-                         if api_app.state.audit_logger:
-                             existing = await api_app.state.audit_logger.get_session(session_id)
-                             if not existing:
-                                 # Generate Name
-                                 name = f"Pact Session {session_id[:8]}"
-                                 if platform == "discord" and isinstance(item, dict) and "event" in item:
-                                     evt = item["event"]
-                                     if evt.metadata.get("is_dm"):
-                                          name = f"@{evt.metadata.get('author_display')}"
-                                     else:
-                                          name = f"#{evt.metadata.get('channel_name')}"
-                                 
-                                 logger.info(f"Creating new PACT session: {session_id} ({name})")
-                                 await api_app.state.audit_logger.create_session(name=name, session_id=session_id)
-                     
-                     # If WEB/Other and no session, use current
-                     if not session_id:
-                         session_id = current_sid
-
-                     await internal_bus.put({
-                         "level": "HEARTBEAT" if source == "HEARTBEAT" else "USER",
-                         "message": user_msg,
-                         "source": source,
-                         "session_id": session_id # Pass it along for logging
-                     })
-
-                     # Feedback to UI
-                     await internal_bus.put({
-                         "level": "THOUGHT",
-                         "message": f"Thinking on: {user_msg}",
-                         "source": "BRAIN",
-                         "session_id": session_id
-                     })
-                     
-                     logger.info(f"Thinking on: {user_msg}")
-                     # Process with Engine
-                     try:
-                         # Extract session_id if available (from WEB) or use the one we injected
-                         # session_id = item.get("session_id") if isinstance(item, dict) else None # Already handled above
-                         
-                         # Trigger Typing Indicator if PACT
-                         if source == "PACT" and platform and sender_id:
-                             asyncio.create_task(pact_manager.trigger_typing(platform, sender_id))
-
-                         # Select model tier based on source
-                         model_tier = "heartbeat_model" if source == "HEARTBEAT" else "smart_model"
-                         
-                         # Optimization: Lean Heartbeat Check
-                         if source == "HEARTBEAT":
-                             try:
-                                 # Use raw content if available (cleaner signal), else fallback to full message
-                                 check_target = item.get("heartbeat_source_content", user_msg)
-                                 is_necessary = await rlm_engine.check_heartbeat_necessity(check_target)
-                                 if not is_necessary:
-                                     logger.info("🛌 Heartbeat skipped: No actionable tasks for this time.")
-                                     await internal_bus.put({
-                                         "level": "HEARTBEAT",
-                                         "message": "🛌 Heartbeat skipped: No actionable tasks for this time.",
-                                         "source": "BRAIN",
-                                         "session_id": session_id
-                                     })
-                                     continue # Skip full think cycle
-                             except Exception as hb_err:
-                                 logger.error(f"Heartbeat Check Failed: {hb_err}. Proceeding to think anyway.")
-
-                         response = await rlm_engine.think(user_msg, session_id=session_id, model_tier=model_tier)
-                         
-                         # Reply to Source
-                         if source in ["WEB", "HEARTBEAT", "CLI"]: # Handle HEARTBEAT same as WEB for now logic-wise
-                              await internal_bus.put({
-                                  "level": "AGENT",
-                                  "message": response,
-                                  "source": "BRAIN",
-                                  "session_id": session_id
-                              })
-                         elif source == "PACT":
-                             adapter = pact_manager.adapters.get(platform)
-                             if adapter and response:
-                                 await adapter.send_message(sender_id, response)
-                                 # Also log to internal bus for history
-                                 await internal_bus.put({
-                                     "level": "AGENT",
-                                     "message": response,
-                                     "source": "BRAIN",
-                                     "session_id": session_id
-                                 })
-                                 
-                     except Exception as e:
-                         logger.error(f"Brain Error: {e}")
-                         error_msg = f"My mind is clouded: {e}"
-                         
-                         if source == "WEB":
-                             await internal_bus.put({"level": "AGENT", "message": error_msg, "source": "BRAIN"})
-                         elif source == "PACT":
-                             # Attempt to report error back to user
-                             try:
-                                 adapter = pact_manager.adapters.get(platform)
-                                 if adapter and sender_id:
-                                     await adapter.send_message(sender_id, f"⚠️ **Error**: {e}")
-                             except Exception as send_err:
-                                 logger.error(f"Failed to send error to PACT: {send_err}")
-                             
-                             # Also log to console/web
-                             await internal_bus.put({
-                                 "level": "ERROR", 
-                                 "message": f"Error interacting with PACT ({platform}): {e}", 
-                                 "source": "BRAIN"
-                             })
-                     finally:
-                         # Always stop typing indicator if it was a PACT
-                         if source == "PACT" and platform and sender_id:
-                             await pact_manager.stop_typing(platform, sender_id)
-
+                asyncio.create_task(process_item(item))
             except asyncio.CancelledError:
                 logger.info("Brain Loop cancelled.")
                 break
