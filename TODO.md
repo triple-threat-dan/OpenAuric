@@ -69,12 +69,10 @@ Current issues:
 - [ ] have the agent react with an emoji via discord to acknowledge receipt of a message
 - [x] fix the "xxx is typing..." bug in discord to actually work
 - [ ] implement Agent2Agent protocol for agent swarms
-
-Priority next steps:
-   1. `auric status`: Implement a command to check if the daemon is    
-      running and report its health/uptime.
-   2. `get_spells` / `get_pacts` tools: Even though spells are in the  
-      prompt, having an explicit tool allows the agent to specifically 
-      query for them if it feels "lost."
-   3. Onboarding Process: Create a CLI-based setup wizard for new      
-      users.
+- [ ] when running a heartbeat cycle, the agent isn't picking up the      
+   latest up to date version of HEARTBEAT.md
+- [ ] implement a remove_heartbeat_task tool so the agent can remove tasks from the heartbeat file without needing to write the entire file
+- [ ] implement a get_tools tool so the agent can get the list of tools available to it instead of injecting them into every system prompt and wasting tokens. Tell the agent "check which tools are available to you before you do a certain task" so it checks the tools list before doing a task.
+- [ ] tell the agent "if someone mentions something that isn't in your memories or confuses you, check your memories to see if it is there instead of assuming it is not there."
+- [ ] if a session sits too long, have the agent close it and summarize/consolidate memories (like a mini dream cycle)
+- [ ] have the agent interact with the HEARTBEAT.md file strictly through tools, not by reading the file directly, so we can abstract the heartbeat file from the agent and allow for other heartbeat mechanisms in the future.. Having the agent read the entire file and write to it all the time is brittle, inefficient, and prone to error and I'm tired of fixing bugs related to it. 

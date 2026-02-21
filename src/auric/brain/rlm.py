@@ -480,7 +480,8 @@ class RLMEngine:
                 parts.append(f"## User Context\n{user_text}")
 
         # 3. The Time & Environment
-        parts.append(f"## Current Time\n{datetime.now().isoformat()} EST")
+        now = datetime.now().astimezone()
+        parts.append(f"## Current Time\n{now.isoformat()} {now.tzname()}")
         parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: When using `execute_powershell`, standard PowerShell syntax applies.")
 
         # 4 Memory & Abilities

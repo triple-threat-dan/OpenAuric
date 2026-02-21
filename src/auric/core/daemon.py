@@ -52,6 +52,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     """
     # 0. Load Configuration
     config = load_config()
+    logger.info(f"OpenAuric Root: {AURIC_ROOT}")
     
     # Security: Ensure Web UI Token exists
     if not config.gateway.web_ui_token:

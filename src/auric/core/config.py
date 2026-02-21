@@ -25,22 +25,17 @@ logger = logging.getLogger("auric.config")
 
 def find_auric_root() -> Path:
     """
-    Locates the .auric directory by searching the current directory and its parents.
-    Defaults to CWD/.auric if not found elsewhere.
+    Locates the .auric directory. 
+    Prioritizes the AURIC_ROOT environment variable, otherwise defaults 
+    strictly to the current directory's .auric folder.
     """
-    cwd = Path.cwd()
-    root = cwd / ".auric"
-    if root.exists():
-        return root
+    if env_root := os.getenv("AURIC_ROOT"):
+        root = Path(env_root)
+    else:
+        root = Path.cwd() / ".auric"
     
-    # Git-style upward search
-    for parent in cwd.parents:
-        candidate = parent / ".auric"
-        if candidate.exists():
-            return candidate
-            
-    # Default to CWD if no existing .auric found (e.g. first run)
-    return cwd / ".auric"
+    # We log the selection later during daemon startup or CLI initialization
+    return root
 
 AURIC_CONFIG_FILE = "auric.json"
 AURIC_ROOT = find_auric_root()

@@ -198,7 +198,13 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
     # Check Heartbeat File
     if heartbeat_file.exists():
         content = heartbeat_file.read_text(encoding="utf-8")
-        if "- " in content:
+        
+        # Check for actual task lines: starts with dash, then potentially space and open bracket (for [ ], [x], etc.)
+        # but NOT just headers or text.
+        import re
+        has_pending = bool(re.search(r"^\s*-\s+.*", content, re.MULTILINE))
+
+        if has_pending:
             logger.info("Heartbeat: Pending tasks detected in HEARTBEAT.md. Waking agent...")
             if command_bus:
                 # Provide absolute path to help agent find the file
@@ -210,11 +216,19 @@ async def run_heartbeat_task(command_bus: Optional[asyncio.Queue] = None):
                     "**RULES & STATE TRACKING:**\n"
                     "1. **Clean Focus**: You are starting with a clean focus for this heartbeat. Ignore your main background tasks.\n"
                     "2. **Recurring Task Tracking**: When you complete a **Recurring Task**, you MUST mutate the `HEARTBEAT.md` file to append a timestamp tag to the end of that specific task line: `[LAST COMPLETED: YYYY-MM-DD]`. Example: `- Between 10am and 11am... [LAST COMPLETED: 2026-02-21]`\n"
-                    "3. Before executing a recurring task, check if it already has a `[LAST COMPLETED: YYYY-MM-DD]` tag with today's date. If it does, SKIP it.\n"
+                    "3. **STRICT TIME CHECK**: Before executing ANY task, you MUST evaluate the time. You cannot do time math in your head. You MUST open a `<thinking>` block and evaluate EVERY task against the Current Time.\n"
+                    "   - If a task is scheduled for the FUTURE -> SKIP.\n"
+                    "   - If a task's time window has ALREADY PASSED (e.g., it is 3:00 PM and the task was for 12:00 PM) -> SKIP (do not attempt to 'catch up' on missed recurring tasks).\n"
+                    "   - If a task is actionable RIGHT NOW -> Mark as ACTIONABLE.\n"
                     "4. **One-time Tasks**: After completing a one-time reminder, remove it from the `One-time Reminders` section as usual.\n"
                     "5. **No History**: Do NOT track heartbeat task progress in HEARTBEAT.md — use it ONLY for final completion tags.\n\n"
-                    f"```markdown\n{content}\n```"
-                    f"If there are no tasks that need to be completed right now (or all are already tagged for today), respond ONLY with a stop token (i.e. <|stop|>) and nothing else.\n"
+                    f"```markdown\n{content}\n```\n\n"
+                    "**EXECUTION INSTRUCTIONS:**\n"
+                    "1. You MUST start your response with a `<thinking>...</thinking>` block to evaluate the times.\n"
+                    "2. Immediately after closing the `</thinking>` tag:\n"
+                    "   - If NO tasks are actionable right now, output EXACTLY AND ONLY: `<|stop|>`\n"
+                    "   - If tasks ARE actionable, output the JSON tool calls (e.g., `web-search`, `discord_send_channel_message`, `write_file`) to execute them.\n"
+                    "3. **DO NOT** chat, say 'Okay', or use your persona outside of the thinking block. The only text outside the thinking block must be `<|stop|>` or valid tool calls.\n"
                 )
                 try:
                     await command_bus.put({
