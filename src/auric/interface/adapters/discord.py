@@ -198,6 +198,7 @@ class DiscordPact(BasePact):
         self.bot_loop_limit = bot_loop_limit
         self.client: Optional[AuricDiscordClient] = None
         self._task: Optional[asyncio.Task] = None
+        self._typing_tasks: Dict[str, asyncio.Task] = {} # target_id -> task
 
     async def trigger_new_session(self, target_id: str) -> None:
         """
@@ -277,6 +278,9 @@ class DiscordPact(BasePact):
         Send a Direct Message to a user.
         Supports User ID (preferred) or Username (fallback).
         """
+        # Stop typing indicator first
+        await self.stop_typing(user_id)
+        
         if not self.client or not self.client.is_ready():
             logger.error("Cannot send DM: Discord Pact not ready.")
             return
@@ -308,6 +312,8 @@ class DiscordPact(BasePact):
                 # If still not found, search in guilds specifically (sometimes global cache lags)
                 if not user:
                     for guild in self.client.guilds:
+                        
+                        u = discord.utils.get(guild.members, id=int(user_id)) if user_id.isdigit() else None
                         
                         if u:
                              if u == self.client.user: # Skip self
@@ -354,9 +360,6 @@ class DiscordPact(BasePact):
         except Exception as e:
             logger.error(f"Failed to send DM to {user_id}: {e}")
             return f"Error sending DM: {e}"
-                 
-        except Exception as e:
-            logger.error(f"Failed to send DM to {user_id}: {e}")
 
     async def lookup_user(self, query: str) -> str:
         """
@@ -444,6 +447,9 @@ class DiscordPact(BasePact):
         Send a message to a specific channel.
         Auto-splits long messages to respect Discord's 2000-char limit.
         """
+        # Stop typing indicator first
+        await self.stop_typing(channel_id)
+        
         if not self.client or not self.client.is_ready():
             logger.error("Cannot send message: Discord Pact not ready.")
             return
@@ -471,6 +477,7 @@ class DiscordPact(BasePact):
         Legacy/Generic send_message. Tries to determine if target is channel or user.
         Kept for backward compatibility or generic routing.
         """
+        # send_dm and send_channel_message already call stop_typing
         # Try channel first
         try:
             await self.send_channel_message(target_id, content)
@@ -511,36 +518,64 @@ class DiscordPact(BasePact):
     async def trigger_typing(self, target_id: str) -> None:
         """
         Trigger a typing indicator on the target channel/user.
+        This version starts a persistent background loop until stop_typing is called.
         """
         if not self.client or not self.client.is_ready():
             return
 
-        try:
-            # target_id could be channel or user ID
-            t_id = int(target_id)
-            
-            # Try as channel first
-            target = self.client.get_channel(t_id)
-            if not target:
-                try:
-                    target = await self.client.fetch_channel(t_id)
-                except:
-                    pass
-            
-            # If not channel, try user (for DM)
-            if not target:
-                try:
-                    target = await self.client.fetch_user(t_id)
-                except:
-                    pass
-            
-            if target and hasattr(target, 'trigger_typing'):
-                await target.trigger_typing()
-            else:
-                logger.debug(f"Target {target_id} not found or doesn't support typing.")
+        # If already typing for this target, don't spawn another task
+        if target_id in self._typing_tasks and not self._typing_tasks[target_id].done():
+            return
+
+        async def _typing_loop(t_id_str: str):
+            try:
+                t_id = int(t_id_str)
+                # Try as channel first
+                target = self.client.get_channel(t_id)
+                if not target:
+                    try:
+                        target = await self.client.fetch_channel(t_id)
+                    except:
+                        pass
                 
-        except Exception as e:
-            logger.error(f"Failed to trigger typing on {target_id}: {e}")
+                # If not channel, try user (for DM)
+                if not target:
+                    try:
+                        target = await self.client.fetch_user(t_id)
+                    except:
+                        pass
+                
+                if target and hasattr(target, 'typing'):
+                    # discord.py typing() context manager sends a typing packet 
+                    # and keeps it alive as long as the context is open.
+                    async with target.typing():
+                        # Keep the context open indefinitely
+                        # The task will be cancelled by stop_typing()
+                        while True:
+                            await asyncio.sleep(3600)
+                else:
+                    logger.debug(f"Target {t_id_str} not found or doesn't support typing.")
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Error in typing loop for {t_id_str}: {e}")
+
+        # Spawn loop
+        self._typing_tasks[target_id] = asyncio.create_task(_typing_loop(target_id))
+
+    async def stop_typing(self, target_id: str) -> None:
+        """
+        Stop the persistent typing indicator for a target.
+        """
+        if target_id in self._typing_tasks:
+            task = self._typing_tasks[target_id]
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            del self._typing_tasks[target_id]
 
     # ==========================
     # Pact Abstraction Methods

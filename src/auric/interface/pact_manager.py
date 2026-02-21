@@ -153,6 +153,14 @@ class PactManager:
         if adapter:
             await adapter.trigger_typing(target_id)
 
+    async def stop_typing(self, platform: str, target_id: str) -> None:
+        """
+        Stops typing indicator on the specified platform.
+        """
+        adapter = self.adapters.get(platform)
+        if adapter:
+            await adapter.stop_typing(target_id)
+
     # ==========================
     # Tool Abstraction Methods
     # ==========================

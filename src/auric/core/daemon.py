@@ -514,6 +514,10 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                                  "message": f"Error interacting with PACT ({platform}): {e}", 
                                  "source": "BRAIN"
                              })
+                     finally:
+                         # Always stop typing indicator if it was a PACT
+                         if source == "PACT" and platform and sender_id:
+                             await pact_manager.stop_typing(platform, sender_id)
 
             except asyncio.CancelledError:
                 logger.info("Brain Loop cancelled.")

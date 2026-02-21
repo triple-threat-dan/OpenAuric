@@ -51,6 +51,13 @@ class BasePact(ABC):
         """
         pass
 
+    async def stop_typing(self, target_id: str) -> None:
+        """
+        Stop the typing indicator on the target channel/user.
+        Default implementation is a no-op.
+        """
+        pass
+
     def on_message(self, callback: Callable[[PactEvent], Awaitable[None]]) -> None:
         """
         Register the callback function to handle incoming messages.

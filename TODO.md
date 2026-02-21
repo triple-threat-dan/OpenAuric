@@ -63,7 +63,8 @@ Current issues:
 - [ ] add a way to backup the agent's state, memories, etc. 
 - [ ] add a way to restore the agent's state, memories, etc. 
 - [ ] ability to restart the agent from the cli
-- [ ] update script
-- [ ] Ollama support
+- [ ] add an update script or command
+- [ ] add Ollama support
 - [ ] only allow tool calling by sub_llm
 - [ ] have the agent react with an emoji via discord to acknowledge receipt of a message
+- [x] fix the "xxx is typing..." bug in discord to actually work
