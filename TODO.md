@@ -68,3 +68,13 @@ Current issues:
 - [ ] only allow tool calling by sub_llm
 - [ ] have the agent react with an emoji via discord to acknowledge receipt of a message
 - [x] fix the "xxx is typing..." bug in discord to actually work
+- [ ] implement Agent2Agent protocol for agent swarms
+
+Priority next steps:
+   1. `auric status`: Implement a command to check if the daemon is    
+      running and report its health/uptime.
+   2. `get_spells` / `get_pacts` tools: Even though spells are in the  
+      prompt, having an explicit tool allows the agent to specifically 
+      query for them if it feels "lost."
+   3. Onboarding Process: Create a CLI-based setup wizard for new      
+      users.

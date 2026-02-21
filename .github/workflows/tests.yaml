@@ -1,0 +1,22 @@
+name: Python Tests (uv)
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Install dependencies
+        # uv sync is faster and more reliable than pip install
+        run: uv sync --all-extras --dev
+
+      - name: Run tests
+        # uv run automatically handles the virtual environment
+        run: uv run pytest --cov=auric tests/
