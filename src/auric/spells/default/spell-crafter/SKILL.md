@@ -100,7 +100,7 @@ You MUST use the `{spell_path}` variable to locate the script.
 python {spell_path}/scripts/init_skill.py '{"name": "my-new-spell"}'
 ```
 
-This will automatically create the spell in `~/.auric/grimoire/spells/my-new-spell`.
+This will automatically create the spell in `./.auric/grimoire/my-new-spell`.
 Do NOT create files manually in the current directory unless explicitly requested. Always use the standard Grimoire location.
 
 ### Step 4: Edit

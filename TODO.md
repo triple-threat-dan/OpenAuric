@@ -1,0 +1,70 @@
+Current issues:
+- [x] In the UI, instead of displaying the session ID in the ARCHIVES panel, display the session name, and default the session name to the (truncated) first line/few words of the first prompt of that session.
+- [x] Change communion/live communion in the ui to terminology that is less occult-ish.
+- [x] Display session name and id somewhere in the modal popup in the logs page
+- [x] llm/agent responses from discord don't show up in other areas such as the UI. They also seem to create a new session each time, unless I'm hallucinating? Instead of appending to the current session. Expected: the auric UI should show user and agent messages from ALL sources/pacts, and discord messages from auric should be appended to the current session, and the chat messages form the current session should be sent to the llm as a conversation history.
+- [x] the discord integration should only trigger the llm to respond if the agent's bot is tagged, replied to, or their name is mentioned (store agent/assistant name in the json)
+- [x] her cli tools might not be working, and check that they run in the workspace folder by default
+- [x] I don't think the chat assistant is actually creating sub-agents when needed, check how that works and verify that the RLM pieces are coded correctly
+- [x] need a mascot/logo and UI revamp. ALISS is the mascot, in a wizard's hat!
+- [x] the agent is just saying a tool call instead of actually... calling that tool
+- [x] architect a way for the agent to build new incantations when it needs to
+- [x] add a tool call to allow the agent to run arbitrary powershell commands
+- [x] github integration
+- [x] gemini cli integration
+- [ ] emotionsss. small model, runs every prompt or task, a global json state of the emotions, a method to inject that state into the system prompt for each call to the LLM
+- [ ] have the heartbeat logic update the emotional state too (gradually calm the agent)
+- [x] I am not sure that heartbeats are working. Let's add a table called heartbeats to the database and log them there. Let's also add an auric heartbeat command so you can manually trigger one from the cli.
+- [x] Daily memories aren't implemented? And need to be... `yyyy-mm-dd.md`, should be saved when important events happen. Perhaps after every interaction a small model is loaded up to summarize recent events and pick important bits to append to the file
+- [x] allow multiple discord users to talk to aliss by having the user messages be prepended with the name of the sender so she knows which user(s) she's talking to
+- [ ] a re-runnable onboarding process via the cli that allows users to set tokens, select pacts, set the name of the agent, etc. 
+- [x] actual vector db for long term memories
+- [x] add support for searching/googling (Brave integration)
+- [x] give the agent the ability to make new spells and save them
+- [x] previous session should load when the user opens the app instead of a new session automatically
+- [ ] support sending images to the agent
+- [ ] support sending multilines in the chatbox
+- [x] auric -m "send a message from the CLI"
+- [x] I think auric might have problems with the workspace, perhaps move workspace and install dir to a subfolder in the app directory
+- [ ] fix it so I don't have to do python -m auric.cli anymore and can just do auric <command>
+- [ ] look into auric status
+- [x] add support for asking the agent to remember something, having it write to its memories, etc.
+- [ ] add support for receiving images from the agent
+- [ ] add support for sending files to the agent
+- [ ] add support for receiving files from the agent
+- [x] SECURITY. Add token for the frontend ui.
+- [x] SECURITY. Add pairing for discord integration.
+- [ ] SECURITY. Add hooks for external integrations to allow users to add their own security measures/intercept certain events.
+- [ ] enable the ability to export spells as claude code/gemini-cli style skill files
+- [ ] add support for specialist agents/models for the rlm to call (coding specialists, RP/chat specialists, etc.)
+- [x] sessions still aren't closing when I am trying to force them to. We need to review how sessions are routed, especially from DMs to general chats and vice-versa. 
+- [x] logs... we need to log *everything*. We need an everything log that logs every single tool call, chat, response, llm call, etc. in JSONL format.
+- [ ] need to add a config/settings page on the frontend ui to allow users to configure their pacts, tokens, etc. Basically a UI for the json config.
+- [ ] We need to add a way to search the logs and memories, perhaps ui pages 
+- [ ] Add per-file unit tests for all the modules, get test coverage above 80%
+- [ ] Look into changing the name in LLMGateway to something more specific so it shows up in stats on OpenRouter    
+- [x] Optimize/audit ALL memory prompts to prevent the agent from saving things to the wrong places
+- [ ] enable/optimize concurrency for the agent so it can do multiple things at once and handle multiple chat messages at once
+- [ ] optimize heartbeats to only spin up a lean system prompt to check for heartbeat tasks *first*, then ONLY delegate those tasks to the LLM if there are any to do.
+- [ ] add more metadata to discord messages, such as the user that a person is responding to, etc., so the bot has more context when responding
+- [ ] heartbeat messages aren't firing when the heartbeat task is for a specific time (e.g. 9am) instead of a range of times. Also, the agent keeps thinking it is a different time than it is...
+- [ ] add a way to set the timezone for the agent, so it knows what time it is.
+- [ ] create an optimized solution for the agent to handle multiple tasks at once, such as a priority queue or similar.
+- [ ] implement some sort of audience detection system so the agent can know when someone is talking to it (versus just mentioning its name) and react accordingly. 
+- [ ] move pacts to a pacts folder
+- [ ] try to simplify or split up the rlm.py file
+- [x] fix issue: agent can't see its spells it just crafted or internal tools 
+- [ ] stronger human-in-the-loop for critical tasks... have the agent show their task plan and ask for confirmation after it creates a plan in FOCUS.md, and proceed only if the user confirms the plan and tells them to proceed. If the user declines, the agent should cancel and reset the FOCUS.md file and not proceed with the task.
+- [ ] stronger human-in-the-loop for critical operations... such as deleting files, running commands, etc. The agent should ask for confirmation before performing any critical step.
+- [ ] discern when agent is being addressed vs. only referred to
+- [ ] add a "get_spells" tool to get   the list of spells available to the agent
+- [ ] add a "get_pacts" tool to get the list of pacts available to the agent
+- [ ] sessions are still awkward to work with. We need the ability to manage sessions better and gracefully close them when the user is done with them.
+- [ ] add a way to backup the agent's state, memories, etc. 
+- [ ] add a way to restore the agent's state, memories, etc. 
+- [x] ability to restart the agent from the cli
+- [ ] add an update script or command
+- [ ] add Ollama support
+- [ ] only allow tool calling by sub_llm
+- [ ] have the agent react with an emoji via discord to acknowledge receipt of a message
+- [x] fix the "xxx is typing..." bug in discord to actually work

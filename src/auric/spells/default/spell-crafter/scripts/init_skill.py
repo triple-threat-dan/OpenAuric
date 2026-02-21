@@ -88,11 +88,14 @@ if __name__ == "__main__":
             print("Error: 'name' is required.")
             sys.exit(1)
 
-        # Default to ~/.auric/grimoire/spells if no path provided
+        # Default to ./.auric/grimoire (CWD) if no path provided
         if custom_path:
-             target_dir = Path(custom_path).expanduser()
+             target_dir = Path(custom_path).resolve()
         else:
-             target_dir = Path("~/.auric/grimoire/spells").expanduser()
+             target_dir = Path.cwd() / ".auric" / "grimoire"
+
+        if not target_dir.parent.exists():
+            print(f"Warning: .auric directory not found at {target_dir.parent}")
 
         create_spell(name, target_dir)
 

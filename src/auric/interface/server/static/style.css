@@ -224,6 +224,11 @@ main {
     box-shadow: 0 0 8px var(--accent-color);
 }
 
+.session-controls {
+    display: flex;
+    align-items: center;
+}
+
 .content {
     flex: 1;
     overflow-y: auto;
@@ -277,6 +282,18 @@ main {
     /* Slightly larger text */
 }
 
+.chat-entry .text {
+    flex: 1;
+    min-width: 0;
+    /* Critical for pre/code overflow in flex items */
+    overflow-wrap: break-word;
+}
+
+.chat-entry .icon {
+    font-size: 1.2rem;
+    padding-top: 2px;
+}
+
 /* User Message: Tiger Flame Theme */
 .chat-entry.user {
     flex-direction: row-reverse;
@@ -307,6 +324,64 @@ main {
     font-size: 0.85rem;
     padding: 10px;
     /* Smaller padding */
+    display: flex;
+    align-items: center;
+    /* Center icon and text vertically */
+}
+
+/* Thinking Animation */
+.thinking-text {
+    font-style: italic;
+    color: #b0a0e0;
+}
+
+.thinking-dots {
+    display: inline-block;
+    width: 20px;
+    text-align: left;
+    animation: dot-pulse 1.5s infinite;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+@keyframes dot-pulse {
+    0% {
+        content: '.';
+    }
+
+    33% {
+        content: '..';
+    }
+
+    66% {
+        content: '...';
+    }
+
+    100% {
+        content: '';
+    }
+}
+
+/* Fallback for animation if content is not supported in keyframes (browsers vary) */
+/* Actually, animating 'content' is not fully supported in all browsers yet. */
+/* Let's use opacity/clip approach for better compatibility or just a simple pulse opacity */
+@keyframes dot-pulse {
+    0% {
+        opacity: 0.2;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.2;
+    }
+}
+
+/* Re-define thinking-dots to use pseudo-element or just simple text fade */
+.thinking-dots {
+    animation: dot-pulse 1.5s infinite ease-in-out;
 }
 
 .markdown-content a {
@@ -389,7 +464,7 @@ button {
     background: var(--accent-color);
     color: #000;
     border: none;
-    padding: 0 25px;
+    padding: 3px 5px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.2s;
@@ -410,12 +485,14 @@ button:hover {
     border-bottom: 1px solid var(--border-color);
     cursor: pointer;
     transition: background 0.2s, border-left 0.2s, padding-left 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .session-item:hover {
     background: rgba(255, 255, 255, 0.03);
     padding-left: 15px;
-    /* Little nudge effect */
 }
 
 .session-item.active {
@@ -424,12 +501,17 @@ button:hover {
     color: #fff;
 }
 
+.session-content {
+    flex: 1;
+    min-width: 0;
+    /* Enable text truncation if needed */
+}
+
 .session-id {
     font-weight: bold;
     font-size: 0.85rem;
     margin-bottom: 3px;
     color: var(--accent-secondary);
-    /* Gold for IDs */
 }
 
 .session-meta {
@@ -437,6 +519,28 @@ button:hover {
     color: var(--muted-text);
     display: flex;
     justify-content: space-between;
+}
+
+.close-session-btn {
+    background: transparent;
+    color: var(--muted-text);
+    border: 1px solid transparent;
+    padding: 2px 6px;
+    margin-left: 10px;
+    font-size: 1.2rem;
+    line-height: 1;
+    border-radius: 4px;
+    opacity: 0.5;
+    transition: all 0.2s;
+}
+
+.close-session-btn:hover {
+    color: var(--error-color);
+    background: rgba(250, 22, 125, 0.1);
+    border-color: var(--error-color);
+    opacity: 1;
+    box-shadow: none;
+    transform: none;
 }
 
 /* Login Modal */
@@ -460,7 +564,7 @@ button:hover {
     padding: 40px;
     border-radius: 8px;
     width: 100%;
-    max-width: 450px;
+    max-width: 1150px;
     text-align: center;
     box-shadow: 0 0 30px rgba(10, 189, 199, 0.15);
     position: relative;
@@ -527,4 +631,75 @@ button:hover {
     font-size: 0.9rem;
     min-height: 1.2em;
     font-weight: bold;
+}
+
+/* Config Panel & Navigation Buttons */
+#config-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.config-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    /* Fill text area */
+    justify-content: center;
+}
+
+.nav-btn {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
+    color: var(--accent-color);
+    padding: 15px;
+    text-align: center;
+    text-decoration: none;
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.nav-btn:hover {
+    background: rgba(10, 189, 199, 0.1);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 10px rgba(10, 189, 199, 0.2);
+    transform: translateX(2px);
+    color: #fff;
+}
+
+.nav-btn .icon {
+    font-size: 1.2rem;
+}
+
+/* Session Status Badges */
+.session-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-weight: normal;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+.active-badge {
+    color: var(--accent-color);
+    background: rgba(10, 189, 199, 0.1);
+    border: 1px solid rgba(10, 189, 199, 0.3);
+}
+
+.archived-badge {
+    color: var(--muted-text);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
 }

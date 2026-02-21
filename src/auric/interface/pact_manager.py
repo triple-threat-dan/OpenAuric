@@ -40,7 +40,8 @@ class PactManager:
                 allowed_channels=self.config.pacts.discord.allowed_channels,
                 allowed_users=self.config.pacts.discord.allowed_users,
                 agent_name=self.config.agents.name,
-                api_port=self.config.gateway.port
+                api_port=self.config.gateway.port,
+                bot_loop_limit=self.config.pacts.discord.bot_loop_limit
             )
             discord.on_message(self.handle_message)
             self.adapters["discord"] = discord
@@ -152,6 +153,14 @@ class PactManager:
         if adapter:
             await adapter.trigger_typing(target_id)
 
+    async def stop_typing(self, platform: str, target_id: str) -> None:
+        """
+        Stops typing indicator on the specified platform.
+        """
+        adapter = self.adapters.get(platform)
+        if adapter:
+            await adapter.stop_typing(target_id)
+
     # ==========================
     # Tool Abstraction Methods
     # ==========================
@@ -175,6 +184,15 @@ class PactManager:
         for name, adapter in self.adapters.items():
             schemas.extend(adapter.get_tools_schema())
         return schemas
+
+    def get_tool_names(self) -> set:
+        """
+        Returns the set of all tool names available across all enabled pacts.
+        """
+        names = set()
+        for name, adapter in self.adapters.items():
+            names.update(adapter.get_tool_names())
+        return names
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         # Linear search for now, could optimize with a map

@@ -1,21 +1,6 @@
-import os
-import signal
-import sys
-import atexit
-import psutil
 import typer
-import json5
-import json
-import urllib.request
-import urllib.error
-from pathlib import Path
-from typing import Any, Optional
 from rich.console import Console
-from rich.table import Table
-
-# Shared modules
-from auric.core.config import load_config, AuricConfig, ConfigLoader, AURIC_ROOT
-from auric.spells.tool_registry import ToolRegistry
+from auric.core.config import AURIC_ROOT
 
 app = typer.Typer(help="OpenAuric: The Recursive Agentic Warlock")
 dashboard_app = typer.Typer(help="Manage the OpenAuric dashboard")
@@ -29,15 +14,149 @@ app.add_typer(spells_app, name="spells")
 pairing_app = typer.Typer(help="Manage Device/User Pairing")
 app.add_typer(pairing_app, name="pairing")
 
+memory_app = typer.Typer(help="Manage Agent Memory")
+app.add_typer(memory_app, name="memory")
+
+focus_app = typer.Typer(help="Manage Agent Focus")
+app.add_typer(focus_app, name="focus")
+
+sessions_app = typer.Typer(help="Manage Active Sessions")
+app.add_typer(sessions_app, name="sessions")
+
 console = Console()
 
 PID_FILE = AURIC_ROOT / "auric.pid"
+
+def send_message(text: str, wait: bool = True):
+    """Internal helper to send a message to the daemon API and optionally wait for response."""
+    import urllib.request
+    import json
+    import time
+    from auric.core.config import load_config
+    
+    config = load_config()
+    port = config.gateway.port
+    token = config.gateway.web_ui_token
+    
+    # 1. Get Initial State (to know what's new)
+    session_id = None
+    last_msg_count = 0
+    try:
+        status_url = f"http://127.0.0.1:{port}/api/status"
+        req = urllib.request.Request(status_url, method="GET")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            status_data = json.loads(resp.read().decode())
+            session_id = status_data.get("current_session_id")
+            chat_history = status_data.get("chat_history", [])
+            last_msg_count = len(chat_history)
+    except Exception:
+        # Fallback if status fails, we'll try to just send
+        pass
+
+    # 2. Send Message
+    url = f"http://127.0.0.1:{port}/api/chat"
+    try:
+        data = json.dumps({"message": text, "source": "CLI", "session_id": session_id}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status != 200:
+                 console.print(f"[red]Error sending message: {response.status}[/red]")
+                 return
+    except Exception as e:
+        console.print(f"[yellow]Daemon not reachable or error occurred: {e}[/yellow]")
+        console.print("[dim]Use 'auric start' to launch the agent daemon.[/dim]")
+        return
+
+    if not wait or not session_id:
+        console.print(f"[green]Message sent: {text}[/green]")
+        return
+
+    # 3. Poll for Response
+    console.print(f"[dim]Sent: {text}[/dim]")
+    console.print("[dim italic]Agent is thinking...[/dim italic]")
+    
+    seen_ids = set() # Optional: if we had message IDs in history
+    # Since we don't have IDs in the web_chat_history buffer yet, we use index
+    
+    start_time = time.time()
+    timeout = 120 # 2 minutes max for a complex thought process
+    
+    try:
+        while time.time() - start_time < timeout:
+            history_url = f"http://127.0.0.1:{port}/api/status"
+            req = urllib.request.Request(history_url, method="GET")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                status_data = json.loads(resp.read().decode())
+                history = status_data.get("chat_history", [])
+                
+                # Check for new messages
+                if len(history) > last_msg_count:
+                    new_messages = history[last_msg_count:]
+                    for msg in new_messages:
+                        role = msg.get("level")
+                        content = msg.get("message", "")
+                        
+                        if role in ("THOUGHT", "TOOL"):
+                            # Only print if it's a tool call or significant thought
+                            # Clean up ANSI or weird formatting if needed
+                            console.print(f"[dim]⚡ {content}[/dim]")
+                        elif role == "AGENT":
+                            console.print(f"\n[bold green]ALISS:[/bold green] {content}")
+                            return # Success!
+                        elif role == "ERROR":
+                            console.print(f"[bold red]Error:[/bold red] {content}")
+                            return
+                            
+                    last_msg_count = len(history)
+            
+            time.sleep(0.5)
+            
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped waiting for response. The agent is still thinking in the background.[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]Error while waiting for response: {e}[/red]")
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    message: str = typer.Option(None, "--message", "-m", help="Send a message directly to the agent"),
+    wait: bool = typer.Option(True, "--wait/--no-wait", "-w/-W", help="Wait for the agent's response")
+):
+    """
+    OpenAuric: The Recursive Agentic Warlock.
+    """
+    if message:
+        send_message(message, wait=wait)
+        raise typer.Exit()
+    elif ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
+
+@app.command()
+def message(
+    content: str = typer.Argument(..., help="The message content to send to the agent"),
+    wait: bool = typer.Option(True, "--wait/--no-wait", "-w/-W", help="Wait for the agent's response")
+):
+    """Send a message to the agent."""
+    send_message(content, wait=wait)
 
 # --- Daemon Commands ---
 
 @app.command()
 def start():
     """Start the Auric Daemon with TUI."""
+    import os
+    import psutil
+    import atexit
     import asyncio
     from auric.core.daemon import run_daemon
     from fastapi import FastAPI
@@ -84,6 +203,7 @@ def start():
 @app.command()
 def stop(force: bool = typer.Option(False, "--force", "-f", help="Force kill the process")):
     """Stop the Auric Daemon."""
+    import psutil
     if not PID_FILE.exists():
         console.print("[yellow]No PID file found. Is the daemon running?[/yellow]")
         return
@@ -129,19 +249,41 @@ def stop(force: bool = typer.Option(False, "--force", "-f", help="Force kill the
 def heartbeat():
     """Triggers a manual system heartbeat."""
     import asyncio
+    import urllib.request
+    import urllib.error
+    from auric.core.config import load_config
     from auric.core.database import AuditLogger
     
     async def run_manual_beat():
+        # 1. Try to trigger via API (Daemon)
+        config = load_config()
+        port = config.gateway.port
+        token = config.gateway.web_ui_token
+        
+        try:
+            url = f"http://127.0.0.1:{port}/api/heartbeat"
+            req = urllib.request.Request(url, method="POST")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            
+            with urllib.request.urlopen(req) as response:
+                if response.status == 200:
+                    console.print("[bold green]Success! Heartbeat triggered via Daemon.[/bold green]")
+                    return
+        except urllib.error.URLError:
+            console.print("[yellow]Daemon not reachable. Logging manual heartbeat to DB directly...[/yellow]")
+        except Exception as e:
+            console.print(f"[red]API Error: {e}[/red]")
+
+        # 2. Fallback: Log directly to DB
         logger = AuditLogger()
-        # No init_db needed if just logging, but safer to init
-        # actually logging might fail if table missing.
         console.print("[yellow]Initializing Database...[/yellow]")
         await logger.init_db()
         
         console.print("[green]Logging Heartbeat...[/green]")
         # log_heartbeat signature: status="ALIVE", meta={}
         await logger.log_heartbeat(status="MANUAL", meta={"source": "cli"})
-        console.print("[bold green]Success! Heartbeat logged.[/bold green]")
+        console.print("[bold green]Success! Heartbeat logged (Offline Mode).[/bold green]")
 
     asyncio.run(run_manual_beat())
 
@@ -164,6 +306,7 @@ def token_main(ctx: typer.Context):
 
 def token_get():
     """Helper to get token."""
+    from auric.core.config import load_config
     config = load_config()
     current_token = config.gateway.web_ui_token
     
@@ -181,6 +324,7 @@ def token_new():
     Generate a NEW Web UI Security Token (Invalidates old one).
     """
     import secrets
+    from auric.core.config import load_config, ConfigLoader
     config = load_config()
     
     new_token = secrets.token_urlsafe(32)
@@ -197,6 +341,9 @@ def token_new():
 @spells_app.command("list")
 def spells_list():
     """List available spells in the Grimoire."""
+    from rich.table import Table
+    from auric.core.config import load_config
+    from auric.spells.tool_registry import ToolRegistry
     try:
         config = load_config()
         registry = ToolRegistry(config)
@@ -223,12 +370,13 @@ def spells_list():
 @spells_app.command("create")
 def spells_create(name: str):
     """Create a new spell scaffold."""
+    from pathlib import Path
     import re
     if not re.match(r"^[a-zA-Z0-9_-]+$", name):
         console.print("[red]Invalid spell name. Use alphanumeric, hyphens, or underscores.[/red]")
         raise typer.Exit(1)
         
-    spells_dir = Path("~/.auric/grimoire/spells").expanduser()
+    spells_dir = Path("./.auric/grimoire").expanduser()
     spell_path = spells_dir / name
     
     if spell_path.exists():
@@ -337,10 +485,14 @@ Files not intended to be loaded into context, but rather used within the output 
 @spells_app.command("reload")
 def spells_reload():
     """Reload spells in the running Daemon (and local index)."""
+    import urllib.request
+    import urllib.error
+    from auric.core.config import load_config
+    from auric.spells.tool_registry import ToolRegistry
     # 1. Update local index
     try:
         config = load_config()
-        registry = ToolRegistry(config) # Re-scans and updates SPELLS.md
+        registry = ToolRegistry(config)
         console.print(f"[green]Local index updated. Found {len(registry._spells)} spells.[/green]")
     except Exception as e:
         console.print(f"[yellow]Warning: Could not update local index: {e}[/yellow]")
@@ -387,6 +539,7 @@ def dashboard_main(ctx: typer.Context):
 def dashboard_start():
     """Start the dashboard UI."""
     import webbrowser
+    from auric.core.config import load_config
     config = load_config()
     host = config.gateway.host
     port = config.gateway.port
@@ -405,6 +558,7 @@ def dashboard_stop():
 @config_app.command("get")
 def config_get(key: str):
     """Get a configuration value."""
+    from auric.core.config import load_config
     config = load_config()
     data = config.model_dump(mode='json')
     
@@ -431,6 +585,8 @@ def config_get(key: str):
 @config_app.command("set")
 def config_set(key: str, value: str, is_json: bool = typer.Option(False, "--json", help="Parse value as JSON5")):
     """Set a configuration value."""
+    import json5
+    from auric.core.config import load_config, AuricConfig, ConfigLoader
     config = load_config()
     data = config.model_dump(mode='json')
     
@@ -481,6 +637,7 @@ def config_set(key: str, value: str, is_json: bool = typer.Option(False, "--json
 @config_app.command("unset")
 def config_unset(key: str):
     """Remove a configuration key."""
+    from auric.core.config import load_config, AuricConfig, ConfigLoader
     config = load_config()
     data = config.model_dump(mode='json')
     
@@ -511,6 +668,7 @@ def config_unset(key: str):
 @pairing_app.command("list")
 def pairing_list(pact: str = typer.Argument(..., help="The pact name (e.g., discord)")):
     """List pending pairing requests."""
+    from rich.table import Table
     from auric.core.pairing import PairingManager
     
     try:
@@ -556,6 +714,132 @@ def pairing_approve(
             
     except Exception as e:
         console.print(f"[red]Error approving request: {e}[/red]")
+
+# --- Memory Commands ---
+
+@memory_app.command("reindex")
+def memory_reindex():
+    """Manually trigger a full re-indexing of the Grimoire and Memories."""
+    import asyncio
+    from auric.memory.librarian import GrimoireLibrarian
+    
+    async def run_reindex():
+        console.print("[yellow]Initializing Librarian for re-indexing...[/yellow]")
+        # We don't need the observer running, just the reindex method
+        librarian = GrimoireLibrarian() 
+        if not librarian.vector_store:
+             console.print("[red]Vector Store not available. Cannot index.[/red]")
+             return
+             
+        await librarian.start_reindexing()
+        
+    try:
+        asyncio.run(run_reindex())
+    except Exception as e:
+        console.print(f"[red]Re-indexing failed: {e}[/red]")
+
+# --- Focus Commands ---
+
+@focus_app.command("reset")
+def focus_reset(
+    force: bool = typer.Option(False, "--force", "-f", help="Force reset without confirmation")
+):
+    """Reset the FOCUS.md file to its default state."""
+    from auric.memory.focus_manager import FocusManager
+    
+    focus_file = AURIC_ROOT / "memories" / "FOCUS.md"
+    
+    if not force:
+        if focus_file.exists():
+            console.print("[yellow]Warning: This will overwrite the current FOCUS.md with the default template.[/yellow]")
+            console.print(f"Target: {focus_file}")
+            if not typer.confirm("Are you sure you want to reset the focus?"):
+                console.print("[red]Aborted.[/red]")
+                raise typer.Abort()
+    
+    try:
+        manager = FocusManager(focus_file)
+        manager.clear()
+        console.print(f"[green]Focus reset successfully.[/green]")
+        console.print(f"File: {focus_file}")
+    except Exception as e:
+        console.print(f"[red]Failed to reset focus: {e}[/red]")
+
+@focus_app.command("get")
+def focus_get(
+    raw: bool = typer.Option(False, "--raw", help="Print raw markdown instead of rendered")
+):
+    """Print the current focus state."""
+    
+    focus_file = AURIC_ROOT / "memories" / "FOCUS.md"
+    
+    if not focus_file.exists():
+        console.print("[yellow]No focus file found.[/yellow]")
+        return
+
+    try:
+        content = focus_file.read_text(encoding="utf-8")
+        if raw:
+            console.print(content)
+        else:
+            from rich.markdown import Markdown
+            console.print(Markdown(content))
+            
+    except Exception as e:
+        console.print(f"[red]Failed to read focus: {e}[/red]")
+
+# --- Session Commands ---
+
+@sessions_app.command("list")
+def sessions_list():
+    """List all active sessions and closed contexts."""
+    from rich.table import Table
+    from auric.core.session_router import SessionRouter
+    
+    try:
+        router = SessionRouter()
+        active = router.list_active_contexts()
+        
+        if not active and not router._closed_contexts:
+            console.print("[yellow]No sessions found.[/yellow]")
+            return
+        
+        if active:
+            console.print(f"[bold green]Active Sessions ({len(active)}):[/bold green]")
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Context")
+            table.add_column("Session ID")
+            table.add_column("Status")
+            
+            for context, sid in active.items():
+                table.add_row(context, sid, "🟢 Active")
+                
+            console.print(table)
+        
+        if router._closed_contexts:
+            console.print(f"\n[yellow]Closed Contexts ({len(router._closed_contexts)}):[/yellow]")
+            for ctx in router._closed_contexts:
+                console.print(f"  📦 {ctx}")
+        
+    except Exception as e:
+        console.print(f"[red]Error listing sessions: {e}[/red]")
+
+@sessions_app.command("closeall")
+def sessions_closeall():
+    """Close ALL active sessions (Nuclear Option)."""
+    from auric.core.session_router import SessionRouter
+    
+    if not typer.confirm("Are you sure you want to close ALL active sessions? This will rotate IDs for everyone."):
+        raise typer.Abort()
+        
+    try:
+        router = SessionRouter()
+        closed_pairs = router.close_all_sessions()
+        console.print(f"[bold green]Closed {len(closed_pairs)} sessions.[/bold green]")
+        for ctx, sid in closed_pairs:
+            console.print(f"  📦 {ctx}: {sid}")
+    except Exception as e:
+        console.print(f"[red]Error closing sessions: {e}[/red]")
 
 if __name__ == "__main__":
     app()

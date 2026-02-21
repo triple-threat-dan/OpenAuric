@@ -1,20 +1,16 @@
 import re
 import threading
 from enum import Enum
-from datetime import datetime
-from auric.core.config import AURIC_ROOT
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-
 from pydantic import BaseModel, Field
+from auric.core.config import AURIC_ROOT
 
-# --- Exceptions ---
+
 class ContextStaleError(Exception):
     """Raised when the agent's context is invalid due to user intervention."""
-    pass
 
 
-# --- Data Models ---
 class FocusState(str, Enum):
     NEW = "NEW"
     IN_PROGRESS = "IN_PROGRESS"
@@ -28,7 +24,10 @@ class FocusModel(BaseModel):
         description="List of steps, e.g., [{'step': 'Do X', 'completed': False}]"
     )
     working_memory: str = Field(default="", description="Scratchpad notes.")
-    focus_path: Path = Field(default_factory=lambda: AURIC_ROOT / "memories" / "FOCUS.md", description="Path to the focus file.")
+    focus_path: Path = Field(
+        default_factory=lambda: AURIC_ROOT / "memories" / "FOCUS.md",
+        description="Path to the focus file."
+    )
     state: FocusState = Field(default=FocusState.NEW, description="Derived state of the focus.")
 
     def get_active_step(self) -> Optional[str]:
@@ -39,7 +38,6 @@ class FocusModel(BaseModel):
         return None
 
 
-# --- Focus Manager ---
 class FocusManager:
     """
     Manages the 'Working Memory' of the agent by syncing with a Markdown file.
@@ -58,12 +56,16 @@ class FocusManager:
 - System initialized.
 """
 
+    # Pre-compiled regex patterns — avoids recompilation on every parse call.
+    _RE_PRIME = re.compile(r'## 🎯 Prime Directive.*?\n(.*?)(?=\n##|\Z)', re.DOTALL | re.IGNORECASE)
+    _RE_PLAN = re.compile(r'## 📋 Plan of Action.*?\n(.*?)(?=\n##|\Z)', re.DOTALL | re.IGNORECASE)
+    _RE_MEMORY = re.compile(r'## 🧠 Working Memory.*?\n(.*?)(?=\n##|\Z)', re.DOTALL | re.IGNORECASE)
+    _RE_STEP = re.compile(r'-\s*\[([ xX])\]\s*(.*)')
+
     def __init__(self, focus_file_path: Path):
         self._focus_file_path = focus_file_path
         self._is_stale = False
         self._lock = threading.Lock()
-
-    # --- Interruption Logic ---
 
     def notify_user_edit(self):
         """Signal that the user has modified the focus file manually."""
@@ -71,36 +73,23 @@ class FocusManager:
             self._is_stale = True
 
     def check_for_interrupt(self):
-        """
-        Checks if the context is stale. If so, raises ContextStaleError to restart reasoning.
-        """
+        """Checks if the context is stale. If so, raises ContextStaleError to restart reasoning."""
         with self._lock:
             if self._is_stale:
-                self._is_stale = False  # Reset flag after catching
+                self._is_stale = False
                 raise ContextStaleError("Focus file was modified by user. Restarting context.")
-
-    # --- File Operations ---
 
     def clear(self):
         """Resets the focus file to the default idle state."""
         self._write_to_file(self.DEFAULT_TEMPLATE)
 
     def load(self) -> FocusModel:
-        """
-        Parses the FOCUS.md file into a structured model.
-        Robust to missing sections.
-        """
-        content = self._read_from_file()
-        return self._parse_markdown(content)
+        """Parses the FOCUS.md file into a structured model. Robust to missing sections."""
+        return self._parse_markdown(self._read_from_file())
 
     def update_plan(self, new_plan: FocusModel):
-        """
-        Serializes the model to Markdown and overwrites FOCUS.md.
-        """
-        markdown_content = self._serialize_model(new_plan)
-        self._write_to_file(markdown_content)
-
-    # --- Private Helpers ---
+        """Serializes the model to Markdown and overwrites FOCUS.md."""
+        self._write_to_file(self._serialize_model(new_plan))
 
     def _read_from_file(self) -> str:
         if not self._focus_file_path.exists():
@@ -108,78 +97,71 @@ class FocusManager:
         return self._focus_file_path.read_text(encoding="utf-8")
 
     def _write_to_file(self, content: str):
-        # Ensure parent directory exists
         self._focus_file_path.parent.mkdir(parents=True, exist_ok=True)
         self._focus_file_path.write_text(content, encoding="utf-8")
 
     def _parse_markdown(self, content: str) -> FocusModel:
-        """
-        Parses raw markdown content using Regex.
-        """
-        # Regex patterns for sections
-        prime_directive_pattern = r"## 🎯 Prime Directive.*?\n(.*?)(?=\n##|\Z)"
-        plan_pattern = r"## 📋 Plan of Action.*?\n(.*?)(?=\n##|\Z)"
-        memory_pattern = r"## 🧠 Working Memory.*?\n(.*?)(?=\n##|\Z)"
-
-        # Extract sections (dotall to capture newlines)
-        prime_match = re.search(prime_directive_pattern, content, re.DOTALL | re.IGNORECASE)
-        plan_match = re.search(plan_pattern, content, re.DOTALL | re.IGNORECASE)
-        memory_match = re.search(memory_pattern, content, re.DOTALL | re.IGNORECASE)
+        """Parses raw markdown content into a FocusModel."""
+        prime_match = self._RE_PRIME.search(content)
+        plan_match = self._RE_PLAN.search(content)
+        memory_match = self._RE_MEMORY.search(content)
 
         prime_directive = prime_match.group(1).strip() if prime_match else ""
         raw_plan = plan_match.group(1).strip() if plan_match else ""
         working_memory = memory_match.group(1).strip() if memory_match else ""
 
-        # Parse Plan Steps
+        # Parse plan steps from checkbox lines
         steps = []
-        # Matches "- [x] Step text" or "- [ ] Step text"
-        step_pattern = r"-\s*\[([ xX])\]\s*(.*)"
         for line in raw_plan.split('\n'):
-            line = line.strip()
-            match = re.match(step_pattern, line)
+            match = self._RE_STEP.match(line.strip())
             if match:
-                is_checked = match.group(1).lower() == 'x'
-                text = match.group(2).strip()
-                steps.append({"step": text, "completed": is_checked})
+                steps.append({
+                    "step": match.group(2).strip(),
+                    "completed": match.group(1).lower() == 'x',
+                })
 
-        # Derive State
+        # Derive state in a single pass over the completed flags
         if not steps:
             state = FocusState.NEW
-        elif all(s['completed'] for s in steps):
-            state = FocusState.COMPLETE
-        elif not any(s['completed'] for s in steps):
-            state = FocusState.NEW
         else:
-            state = FocusState.IN_PROGRESS
+            completed = {s['completed'] for s in steps}
+            if completed == {True}:
+                state = FocusState.COMPLETE
+            elif completed == {False}:
+                state = FocusState.NEW
+            else:
+                state = FocusState.IN_PROGRESS
 
         return FocusModel(
             prime_directive=prime_directive,
             plan_steps=steps,
             working_memory=working_memory,
-            state=state
+            state=state,
         )
 
     def _serialize_model(self, model: FocusModel) -> str:
-        """
-        Converts FocusModel back to the specific Markdown format.
-        """
-        lines = ["# 🔮 THE FOCUS (Current State)", ""]
+        """Converts FocusModel back to the specific Markdown format."""
+        directive = model.prime_directive or "(No directive set)"
+        memory = model.working_memory or "(Empty)"
 
-        lines.append("## 🎯 Prime Directive (The \"Why\")")
-        lines.append(model.prime_directive if model.prime_directive else "(No directive set)")
-        lines.append("")
-
-        lines.append("## 📋 Plan of Action (The \"How\")")
-        if not model.plan_steps:
-            lines.append("- [ ] (No steps defined)")
+        if model.plan_steps:
+            plan_lines = [
+                f"- [{'x' if s['completed'] else ' '}] {s['step']}"
+                for s in model.plan_steps
+            ]
         else:
-            for step in model.plan_steps:
-                mark = "x" if step['completed'] else " "
-                lines.append(f"- [{mark}] {step['step']}")
-        lines.append("")
+            plan_lines = ["- [ ] (No steps defined)"]
 
-        lines.append("## 🧠 Working Memory (Scratchpad)")
-        lines.append(model.working_memory if model.working_memory else "(Empty)")
-        lines.append("")
-
-        return "\n".join(lines)
+        return "\n".join([
+            '# 🔮 THE FOCUS (Current State)',
+            '',
+            '## 🎯 Prime Directive (The "Why")',
+            directive,
+            '',
+            '## 📋 Plan of Action (The "How")',
+            *plan_lines,
+            '',
+            '## 🧠 Working Memory (Scratchpad)',
+            memory,
+            '',
+        ])

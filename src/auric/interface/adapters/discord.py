@@ -18,11 +18,75 @@ class AuricDiscordClient(discord.Client):
 
     async def on_ready(self):
         logger.info(f"Discord connected as {self.user} (ID: {self.user.id})")
+        # Ensure cache is populated
+        if self.intents.members:
+            for guild in self.guilds:
+                await guild.chunk()
+                logger.info(f"Chunked guild {guild.name} ({guild.member_count} members)")
+
+    async def _is_bot_loop(self, channel, limit: int = 4) -> bool:
+        """
+        Check if the last `limit` messages are all from bots (including self).
+        """
+        try:
+            # We need to include the current message in history check or just check history
+            # .history(limit=N) returns newest first
+            async for msg in channel.history(limit=limit):
+                if not msg.author.bot:
+                    return False # Found a human, chain broken
+            return True # All recent messages are bots
+        except Exception as e:
+            logger.error(f"Failed to check bot loop: {e}")
+            return False
 
     async def on_message(self, message: discord.Message):
         # Ignore own messages
         if message.author == self.user:
             return
+
+        # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
+        should_respond = False
+        
+        # 1. DMs are always intentional
+        if isinstance(message.channel, discord.DMChannel):
+            should_respond = True
+        
+        # 2. Direct Mention
+        elif self.user in message.mentions:
+            should_respond = True
+            
+        # 3. Name Mention
+        elif re.search(rf"\b{re.escape(self.pact.agent_name)}\b", message.content, re.IGNORECASE):
+            should_respond = True
+            
+        # 4. Reply to Bot
+        elif message.reference:
+            # Check if it's a reply to us
+            if message.reference.cached_message:
+                if message.reference.cached_message.author == self.user:
+                    should_respond = True
+            else:
+                # Need to fetch
+                try:
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                    if ref_msg and ref_msg.author == self.user:
+                        should_respond = True
+                except:
+                    # Message might be deleted or inaccessible
+                    pass
+
+        if not should_respond:
+            # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
+            return
+
+        # 5. Bot Loop Prevention
+        # If the sender is a bot, check if we are in a loop
+        if message.author.bot:
+             if await self._is_bot_loop(message.channel, limit=self.pact.bot_loop_limit):
+                 logger.warning(f"Bot Loop Detected in {message.channel}. Stopping response to {message.author.name}.")
+                 return
+
+
 
         # Whitelist Checks / Pairing Authentication
         from auric.core.pairing import PairingManager
@@ -47,7 +111,7 @@ class AuricDiscordClient(discord.Client):
                 should_warn = True
             elif self.user in message.mentions:
                 should_warn = True
-            elif self.pact.agent_name.lower() in message.content.lower():
+            elif re.search(rf"\b{re.escape(self.pact.agent_name)}\b", message.content, re.IGNORECASE):
                 should_warn = True
                 
             if should_warn:
@@ -80,40 +144,7 @@ class AuricDiscordClient(discord.Client):
              await self.pact.trigger_new_session(str(message.channel.id))
              return
 
-        # Trigger Logic: Only respond if mentioned, replied to, named, or in DM
-        should_respond = False
-        
-        # 1. DMs are always intentional
-        if isinstance(message.channel, discord.DMChannel):
-            should_respond = True
-        
-        # 2. Direct Mention
-        elif self.user in message.mentions:
-            should_respond = True
-            
-        # 3. Name Mention
-        elif self.pact.agent_name.lower() in message.content.lower():
-            should_respond = True
-            
-        # 4. Reply to Bot
-        elif message.reference:
-            # Check if it's a reply to us
-            if message.reference.cached_message:
-                if message.reference.cached_message.author == self.user:
-                    should_respond = True
-            else:
-                # Need to fetch
-                try:
-                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
-                    if ref_msg and ref_msg.author == self.user:
-                        should_respond = True
-                except:
-                    # Message might be deleted or inaccessible
-                    pass
 
-        if not should_respond:
-            # logger.debug("Ignoring irrelevant message (not mentioned/named/reply).")
-            return
 
         # Parse Mentions and Clean Content
         clean_content = message.content
@@ -140,6 +171,8 @@ class AuricDiscordClient(discord.Client):
             timestamp=message.created_at,
             metadata={
                 "channel_id": str(message.channel.id),
+                "channel_name": getattr(message.channel, "name", "DM"),
+                "guild_name": getattr(message.guild, "name", "Direct Message") if message.guild else "Direct Message",
                 "author_id": str(message.author.id),
                 "author_name": message.author.name,
                 "author_display": message.author.display_name,
@@ -155,25 +188,32 @@ class AuricDiscordClient(discord.Client):
 
 
 class DiscordPact(BasePact):
-    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric", api_port: int = 8000):
+    def __init__(self, token: str, allowed_channels: List[str] = [], allowed_users: List[str] = [], agent_name: str = "Auric", api_port: int = 8000, bot_loop_limit: int = 4):
         super().__init__()
         self.token = token
         self.allowed_channels = allowed_channels
         self.allowed_users = allowed_users
         self.agent_name = agent_name
         self.api_port = api_port
+        self.bot_loop_limit = bot_loop_limit
         self.client: Optional[AuricDiscordClient] = None
         self._task: Optional[asyncio.Task] = None
+        self._typing_tasks: Dict[str, asyncio.Task] = {} # target_id -> task
 
     async def trigger_new_session(self, target_id: str) -> None:
         """
         Triggers a new session via the local API.
+        Passes the correct discord context key so the SessionRouter
+        rotates the right session (not the web session).
         """
         import aiohttp
         try:
             url = f"http://127.0.0.1:{self.api_port}/api/sessions/new"
+            # Pass the correct context key: discord:<channel_id>
+            context_key = f"discord:{target_id}"
+            payload = {"context": context_key}
             async with aiohttp.ClientSession() as session:
-                async with session.post(url) as resp:
+                async with session.post(url, json=payload) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         new_sid = data.get("session_id")
@@ -195,6 +235,7 @@ class DiscordPact(BasePact):
         
         # Intents
         intents = discord.Intents.default()
+        intents.members = True # Required to see other users!
         intents.messages = True
         intents.message_content = True # Critical for reading content
         intents.dm_messages = True
@@ -235,25 +276,180 @@ class DiscordPact(BasePact):
     async def send_dm(self, user_id: str, content: str) -> None:
         """
         Send a Direct Message to a user.
+        Supports User ID (preferred) or Username (fallback).
         """
+        # Stop typing indicator first
+        await self.stop_typing(user_id)
+        
         if not self.client or not self.client.is_ready():
             logger.error("Cannot send DM: Discord Pact not ready.")
             return
 
         try:
-            u_id = int(user_id)
-            user = await self.client.fetch_user(u_id)
+            user = None
+            
+            # 1. Try as Numeric ID
+            if user_id.isdigit():
+                try:
+                    u_id = int(user_id)
+                    user = await self.client.fetch_user(u_id)
+                except Exception:
+                    pass
+            
+            # 2. Try as Username (Fallback)
+            if not user:
+                # Search in all accessible guilds
+                logger.info(f"Looking up user by name: '{user_id}'")
+                
+                # Check global cache first
+                for u in self.client.users:
+                    if u == self.client.user:
+                        continue
+                    if u.name.lower() == user_id.lower() or u.global_name == user_id:
+                        user = u
+                        break
+                
+                # If still not found, search in guilds specifically (sometimes global cache lags)
+                if not user:
+                    for guild in self.client.guilds:
+                        
+                        u = discord.utils.get(guild.members, id=int(user_id)) if user_id.isdigit() else None
+                        
+                        if u:
+                             if u == self.client.user: # Skip self
+                                 u = None
+                                 continue
+                             user = u
+                             break
+                        
+                        # Try exact match first
+                        u = discord.utils.get(guild.members, name=user_id)
+                        if u and u != self.client.user:
+                             user = u
+                             break
+                             
+                        # Try case-insensitive
+                        u = next((m for m in guild.members if m.name.lower() == user_id.lower() and m != self.client.user), None)
+                        if u:
+                             user = u
+                             break
+                             
+                        # Try display name
+                        u = next((m for m in guild.members if m.display_name.lower() == user_id.lower() and m != self.client.user), None)
+                        if u:
+                             user = u
+                             break
+
             if user:
-                await user.send(content)
+                logger.info(f"Resolved DM target to: {user.name} (ID: {user.id}) [Type: {type(user).__name__}]")
+                for chunk in self._chunk_message(content):
+                    await user.send(chunk)
+                logger.info(f"Sent DM to {user.name} ({user.id})")
+                return f"Message sent to {user.name} ({user.id})"
             else:
-                 logger.error(f"User {user_id} not found for DM.")
+                 # Debug: List what we CAN see
+                 debug_info = []
+                 for g in self.client.guilds:
+                     members = [f"{m.name} ({m.display_name})" for m in g.members]
+                     debug_info.append(f"Guild {g.name}: {members[:5]}... (Total {len(members)})")
+                 
+                 error_msg = f"User '{user_id}' not found. Visibile Context: {'; '.join(debug_info)}"
+                 logger.error(error_msg)
+                 return error_msg
+                 
         except Exception as e:
             logger.error(f"Failed to send DM to {user_id}: {e}")
+            return f"Error sending DM: {e}"
+
+    async def lookup_user(self, query: str) -> str:
+        """
+        Search for a user by name or ID across all visible guilds.
+        Returns a formatted list of matches.
+        """
+        if not self.client or not self.client.is_ready():
+            return "Error: Discord Pact not ready."
+
+        matches = []
+        unique_ids = set()
+        
+        query_lower = query.lower()
+        
+        # Helper to add match
+        def add_match(user, source):
+            if user.id in unique_ids or user == self.client.user:
+                return
+            unique_ids.add(user.id)
+            matches.append(f"- {user.name} (Display: {user.display_name}) [ID: {user.id}] - Found in: {source}")
+
+        # 1. Try as ID
+        if query.isdigit():
+            try:
+                user = await self.client.fetch_user(int(query))
+                if user:
+                    add_match(user, "Direct Fetch")
+            except:
+                pass
+
+        # 2. Search Guilds
+        for guild in self.client.guilds:
+            # Exact/Partial Name Match
+            for member in guild.members:
+                if query_lower in member.name.lower() or query_lower in member.display_name.lower():
+                    add_match(member, f"Guild '{guild.name}'")
+        
+        if not matches:
+            return f"No users found matching '{query}'. Context: {len(self.client.guilds)} guilds scaned."
+        
+        return "Found users:\n" + "\n".join(matches[:10]) # Limit to 10
+
+    @staticmethod
+    def _chunk_message(content: str, max_length: int = 2000) -> list[str]:
+        """
+        Splits a message into chunks that fit within Discord's character limit.
+        Tries to split at paragraph boundaries, then line boundaries, then word boundaries.
+        """
+        if len(content) <= max_length:
+            return [content]
+        
+        chunks = []
+        remaining = content
+        
+        while remaining:
+            if len(remaining) <= max_length:
+                chunks.append(remaining)
+                break
+            
+            # Try to find a good split point
+            chunk = remaining[:max_length]
+            
+            # Priority 1: Split at paragraph boundary (double newline)
+            split_idx = chunk.rfind('\n\n')
+            
+            # Priority 2: Split at line boundary
+            if split_idx == -1 or split_idx < max_length // 2:
+                split_idx = chunk.rfind('\n')
+            
+            # Priority 3: Split at word boundary (space)
+            if split_idx == -1 or split_idx < max_length // 2:
+                split_idx = chunk.rfind(' ')
+            
+            # Fallback: Hard split at max_length
+            if split_idx == -1 or split_idx < max_length // 4:
+                split_idx = max_length
+            
+            chunks.append(remaining[:split_idx].rstrip())
+            remaining = remaining[split_idx:].lstrip()
+        
+        return [c for c in chunks if c]  # Filter empty chunks
 
     async def send_channel_message(self, channel_id: str, content: str) -> None:
         """
         Send a message to a specific channel.
+        Auto-splits long messages to respect Discord's 2000-char limit.
         """
+        # Stop typing indicator first
+        await self.stop_typing(channel_id)
+        
         if not self.client or not self.client.is_ready():
             logger.error("Cannot send message: Discord Pact not ready.")
             return
@@ -269,7 +465,8 @@ class DiscordPact(BasePact):
                     pass
             
             if channel and hasattr(channel, 'send'):
-                await channel.send(content)
+                for chunk in self._chunk_message(content):
+                    await channel.send(chunk)
             else:
                 logger.error(f"Channel {channel_id} not found or not sendable.")
         except Exception as e:
@@ -280,6 +477,7 @@ class DiscordPact(BasePact):
         Legacy/Generic send_message. Tries to determine if target is channel or user.
         Kept for backward compatibility or generic routing.
         """
+        # send_dm and send_channel_message already call stop_typing
         # Try channel first
         try:
             await self.send_channel_message(target_id, content)
@@ -320,36 +518,64 @@ class DiscordPact(BasePact):
     async def trigger_typing(self, target_id: str) -> None:
         """
         Trigger a typing indicator on the target channel/user.
+        This version starts a persistent background loop until stop_typing is called.
         """
         if not self.client or not self.client.is_ready():
             return
 
-        try:
-            # target_id could be channel or user ID
-            t_id = int(target_id)
-            
-            # Try as channel first
-            target = self.client.get_channel(t_id)
-            if not target:
-                try:
-                    target = await self.client.fetch_channel(t_id)
-                except:
-                    pass
-            
-            # If not channel, try user (for DM)
-            if not target:
-                try:
-                    target = await self.client.fetch_user(t_id)
-                except:
-                    pass
-            
-            if target and hasattr(target, 'trigger_typing'):
-                await target.trigger_typing()
-            else:
-                logger.debug(f"Target {target_id} not found or doesn't support typing.")
+        # If already typing for this target, don't spawn another task
+        if target_id in self._typing_tasks and not self._typing_tasks[target_id].done():
+            return
+
+        async def _typing_loop(t_id_str: str):
+            try:
+                t_id = int(t_id_str)
+                # Try as channel first
+                target = self.client.get_channel(t_id)
+                if not target:
+                    try:
+                        target = await self.client.fetch_channel(t_id)
+                    except:
+                        pass
                 
-        except Exception as e:
-            logger.error(f"Failed to trigger typing on {target_id}: {e}")
+                # If not channel, try user (for DM)
+                if not target:
+                    try:
+                        target = await self.client.fetch_user(t_id)
+                    except:
+                        pass
+                
+                if target and hasattr(target, 'typing'):
+                    # discord.py typing() context manager sends a typing packet 
+                    # and keeps it alive as long as the context is open.
+                    async with target.typing():
+                        # Keep the context open indefinitely
+                        # The task will be cancelled by stop_typing()
+                        while True:
+                            await asyncio.sleep(3600)
+                else:
+                    logger.debug(f"Target {t_id_str} not found or doesn't support typing.")
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Error in typing loop for {t_id_str}: {e}")
+
+        # Spawn loop
+        self._typing_tasks[target_id] = asyncio.create_task(_typing_loop(target_id))
+
+    async def stop_typing(self, target_id: str) -> None:
+        """
+        Stop the persistent typing indicator for a target.
+        """
+        if target_id in self._typing_tasks:
+            task = self._typing_tasks[target_id]
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            del self._typing_tasks[target_id]
 
     # ==========================
     # Pact Abstraction Methods
@@ -366,7 +592,8 @@ class DiscordPact(BasePact):
         return [
             "discord_send_dm", 
             "discord_send_channel_message", 
-            "discord_add_reaction"
+            "discord_add_reaction",
+            "discord_lookup_user"
         ]
 
     def get_tools_schema(self) -> List[Dict[str, Any]]:
@@ -437,13 +664,31 @@ class DiscordPact(BasePact):
                         "required": ["channel_id", "message_id", "emoji"]
                     }
                 }
+            },
+             {
+                "type": "function",
+                "function": {
+                    "name": "discord_lookup_user",
+                    "description": "Search for a Discord user by name or ID.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The username, display name, or ID to search for."
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
             }
         ]
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
         if tool_name == "discord_send_dm":
-            await self.send_dm(args.get("user_id"), args.get("content"))
-            return "Message sent."
+            return await self.send_dm(args.get("user_id"), args.get("content"))
+        elif tool_name == "discord_lookup_user":
+            return await self.lookup_user(args.get("query"))
         elif tool_name == "discord_send_channel_message":
             await self.send_channel_message(args.get("channel_id"), args.get("content"))
             return "Message sent."

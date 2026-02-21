@@ -16,6 +16,7 @@ class TelegramPact(BasePact):
         self.token = token
         self.application: Optional[Application] = None
         self._started = False
+        self._typing_tasks: Dict[str, asyncio.Task] = {} # chat_id -> task
 
     async def start(self) -> None:
         """
@@ -71,6 +72,9 @@ class TelegramPact(BasePact):
         """
         Send a message to a chat_id.
         """
+        # Stop typing indicator first
+        await self.stop_typing(target_id)
+        
         if not self._started or not self.application:
             logger.error("Cannot send message: Telegram Pact not started.")
             return
@@ -79,6 +83,46 @@ class TelegramPact(BasePact):
             await self.application.bot.send_message(chat_id=target_id, text=content)
         except TelegramError as e:
             logger.error(f"Failed to send Telegram message to {target_id}: {e}")
+
+    async def trigger_typing(self, target_id: str) -> None:
+        """
+        Trigger a typing indicator on the target chat.
+        """
+        if not self._started or not self.application:
+            return
+
+        # If already typing for this target, don't spawn another task
+        if target_id in self._typing_tasks and not self._typing_tasks[target_id].done():
+            return
+
+        async def _typing_loop(chat_id: str):
+            from telegram.constants import ChatAction
+            try:
+                while True:
+                    # Telegram typing action expires after ~5 seconds
+                    await self.application.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                    await asyncio.sleep(4)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Error in Telegram typing loop for {chat_id}: {e}")
+
+        # Spawn loop
+        self._typing_tasks[target_id] = asyncio.create_task(_typing_loop(target_id))
+
+    async def stop_typing(self, target_id: str) -> None:
+        """
+        Stop the persistent typing indicator for a target.
+        """
+        if target_id in self._typing_tasks:
+            task = self._typing_tasks[target_id]
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            del self._typing_tasks[target_id]
 
     async def _telegram_handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """

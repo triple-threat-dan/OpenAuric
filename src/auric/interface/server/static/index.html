@@ -26,7 +26,12 @@
             <section class="panel" id="session-panel">
                 <div class="panel-header">
                     <h2>📚 SESSIONS</h2>
-                    <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
+                    <div class="session-controls">
+                        <button id="close-all-btn" onclick="closeAllSessions()"
+                            title="Close All Active Sessions (Nuclear)"
+                            style="background: #e74c3c; margin-right: 5px;">☢️</button>
+                        <button id="new-session-btn" onclick="startNewSession()" title="New Session">+</button>
+                    </div>
                 </div>
                 <div class="content scroll-box" id="session-list">
                     <div class="session-item active" id="session-live" onclick="switchSession(null)">
@@ -57,12 +62,19 @@
                 </section>
 
                 <!-- Bottom Right: Logs -->
-                <section class="panel" id="log-panel">
-                    <h2>📜 LOGS <a href="llm_logs.html"
-                            style="font-size: 0.6em; float: right; color: var(--accent-secondary); text-decoration: none;">[VIEW
-                            FULL]</a></h2>
-                    <div class="content scroll-box" id="log-content">
-                        <!-- Logs -->
+                <!-- Bottom Right: Config / Navigation -->
+                <section class="panel" id="config-panel">
+                    <h2>⚙️ SYSTEM CONTROL</h2>
+                    <div class="content config-buttons">
+                        <button class="nav-btn" onclick="alert('Settings not implemented yet.')">
+                            <span class="icon">🛠️</span> Settings
+                        </button>
+                        <a href="system_logs.html" class="nav-btn">
+                            <span class="icon">📜</span> System Logs
+                        </a>
+                        <a href="llm_logs.html" class="nav-btn">
+                            <span class="icon">🧠</span> LLM Logs
+                        </a>
                     </div>
                 </section>
             </div>
@@ -273,8 +285,15 @@
                 } else if (level === "AGENT") {
                     className += " agent";
                     icon = "🧙‍♂️";
-                } else if (level === "THOUGHT") {
+                }
+
+                if (level === "THOUGHT") {
                     className += " thought";
+                    // For thoughts, we ignore the text content and show a standardized "Thinking..."
+                    // text = "Thinking..."; 
+                    // But we want the icon + text wrapper.
+                    // The icon is set below.
+                    // Let's override the content generation logic.
                     icon = "💭";
                 } else if (level === "UNKNOWN") {
                     // Try to infer from text or just default
@@ -285,8 +304,12 @@
                 }
 
                 // Parse Markdown for message content
-                // Ensure marked is available
-                const content = (typeof marked !== 'undefined') ? marked.parse(text) : text;
+                let content = (typeof marked !== 'undefined') ? marked.parse(text) : text;
+
+                // Override content for thoughts
+                if (level === "THOUGHT" || (level === "UNKNOWN" && text.startsWith("Thinking"))) {
+                    content = `<span class="thinking-text">Thinking</span><span class="thinking-dots">...</span>`;
+                }
 
                 return `<div class="${className}"><span class="icon">${icon}</span> <div class="text markdown-content">${content}</div></div>`;
             }).join('');
@@ -306,31 +329,9 @@
 
         let lastLogJSON = "";
 
+        /* Logs removed from main dash */
         function renderLogs(logs) {
-            const container = document.getElementById('log-content');
-
-            // Smart Scroll for Logs too
-            const threshold = 50;
-            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-            const isFirstLoad = container.innerHTML.trim() === "";
-
-            const html = logs.map(log => {
-                if (typeof log === 'string' && log.includes('[ERROR]')) {
-                    return `<div class="log-entry error">${log}</div>`;
-                }
-                return `<div class="log-entry">${log}</div>`;
-            }).join('');
-
-            // Update if JSON changed
-            const currentJSON = JSON.stringify(logs);
-            if (currentJSON !== lastLogJSON) {
-                lastLogJSON = currentJSON;
-
-                container.innerHTML = html;
-                if (isNearBottom || isFirstLoad) {
-                    container.scrollTop = container.scrollHeight;
-                }
-            }
+            // No-op
         }
 
         function renderStats(stats) {
@@ -410,13 +411,17 @@
                     const isActive = activeSessionId === sess.session_id;
                     const date = sess.last_active ? new Date(sess.last_active).toLocaleString() : 'Unknown';
                     const displayName = sess.name || sess.session_id;
+                    const statusBadge = sess.is_active ? '<span class="session-badge active-badge">🟢 Active</span>' : '<span class="session-badge archived-badge">📦 Archived</span>';
                     return `
                     <div class="session-item ${isActive ? 'active' : ''}" onclick="switchSession('${sess.session_id}')">
-                        <div class="session-id">${displayName}</div>
-                        <div class="session-meta">
-                            <span>${date}</span>
-                            <span>${sess.message_count} msgs</span>
+                        <div class="session-content">
+                            <div class="session-id">${displayName} ${statusBadge}</div>
+                            <div class="session-meta">
+                                <span>${date}</span>
+                                <span>${sess.message_count} msgs</span>
+                            </div>
                         </div>
+                        <button class="close-session-btn" onclick="event.stopPropagation(); closeSession('${sess.session_id}')" title="Close Session">×</button>
                     </div>`;
                 }).join('');
 
@@ -455,11 +460,46 @@
             if (!skipConfirm && !confirm("Start a new session?")) return;
 
             try {
-                await fetchAuth(`${API_URL}/sessions/new`, { method: 'POST' });
+                await fetchAuth(`${API_URL}/sessions/new`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ context: "web" })
+                });
+
                 // Switch to live view
-                switchSession(null);
+                activeSessionId = null;
+                document.getElementById('chat-content').innerHTML = ''; // Clear chat immediately
+                fetchSessions();
+                updateState();
             } catch (e) {
                 alert("Failed to start new session");
+            }
+        }
+
+        async function closeSession(sessionId) {
+            if (!confirm("Close this session? It will be archived.")) return;
+            try {
+                await fetchAuth(`${API_URL}/sessions/${sessionId}/close`, { method: 'POST' });
+                if (activeSessionId === sessionId) {
+                    activeSessionId = null;
+                    document.getElementById('chat-content').innerHTML = '';
+                }
+                fetchSessions();
+            } catch (e) {
+                alert("Failed to close session: " + e.message);
+            }
+        }
+
+        async function closeAllSessions() {
+            if (!confirm("☢️ NUCLEAR OPTION ☢️\n\nAre you sure you want to close ALL active sessions (Web, Discord, etc)?\nThis will rotate everything to fresh states.")) return;
+            try {
+                await fetchAuth(`${API_URL}/sessions/closeall`, { method: 'POST' });
+                activeSessionId = null;
+                document.getElementById('chat-content').innerHTML = '';
+                fetchSessions();
+                alert("All sessions closed.");
+            } catch (e) {
+                alert("Failed to close all sessions: " + e.message);
             }
         }
 

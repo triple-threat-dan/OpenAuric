@@ -27,10 +27,11 @@ OpenAuric is built on the metaphor of the **Warlock**:
 ## ✨ Key Features (v0.1)
 
 * **🧠 Recursive Language Model (RLM):** Auric can "spawn" sub-agents to solve specific problems (e.g., "Summarize this PDF") and return only the result to the main thread, saving tokens and maintaining coherence.
-* **📚 The Grimoire:** A transparent, file-based memory system.
+* **📜 The Grimoire:** The collection of scripts Auric has written to solve problems - fully compatible with OpenClaw, gemini-cli, and claude code skills.
+* `grimoire/`: Python scripts (Spells) the agent wrote or possesses to solve problems.
+* **📚 The Memory:** A transparent, file-based memory system.
 * `memories/FOCUS.md`: The "Working Memory" representing the current task state. Loaded on every turn.
 * `memories/MEMORY.md`: Long-term semantic memory.
-* `grimoire/`: Python scripts (Spells) the agent wrote or possesses to solve problems.
 
 
 * **🛡️ The Circle (Sandbox):** A safe Python execution environment where Auric can write and run code to query its own memory or perform tasks.
@@ -64,24 +65,48 @@ This script will:
 3. Install dependencies in a dedicated virtual environment.
 4. Alias the `auric` command in your shell.
 
+## 🚀 Quick Start
+
+1. **Awaken the Daemon**: Start the agent in the background.
+   ```bash
+   auric start
+   ```
+2. **Set your API Key**: (e.g., for Gemini)
+   ```bash
+   auric config set keys.gemini YOUR_API_KEY
+   ```
+3. **Invoke the Warlock**: Send your first command directly from the terminal.
+   ```bash
+   auric -m "Who are you?"
+   ```
+4. **Open the Dashboard**: Access the web UI to visualize thoughts and memory.
+   ```bash
+   auric dashboard
+   ```
+
 ---
 
 ## 🕹️ Usage
 
 ### Core Commands
 
-Manage the daemon process using the CLI:
+Manage the daemon and interact with the agent using the CLI:
 
 ```bash
-# Awaken the agent (starts the background daemon)
+# Start the background daemon
 auric start
 
-# Check connection status to your Patron (TODO)
-auric status
+# Send a message and wait for a response (Shortcut)
+auric -m "Hello Auric!"
 
-# Put the agent to sleep (Stops daemon & triggers Dream Cycle)
+# Send a message using the explicit command
+auric message "What's on my schedule?"
+
+# Stop the daemon (triggers Dream Cycle)
 auric stop
 
+# Restart the daemon
+auric restart
 ```
 
 ### Configuration
@@ -112,9 +137,19 @@ Example `auric.json` snippet:
 
 ---
 
-## 📖 The Grimoire (Memory System)
+## 📖 The Grimoire (Spell/Skill System)
 
-Auric's intelligence relies on **The Grimoire**, located at `.auric/grimoire/` and **Memories** at `.auric/memories/`. You are encouraged to read and edit these files manually—Auric will see your changes instantly.
+Auric's abilities rely on **The Grimoire**, the collection of Spells located at `.auric/grimoire/`
+
+### `grimoire/` (Skills)
+
+Folder containing SKILL.md files and Python scripts Auric has written.
+
+* *Example:* `grimoire/docker_fix.py`
+
+## 📚 The Memory (Long-term Memory System)
+
+Auric's short- and long-term memory is stored in the **Memories** at `.auric/memories/`. You are encouraged to read and edit these files manually—Auric will see your changes instantly.
 
 ### `FOCUS.md` (The Scratchpad)
 
@@ -131,17 +166,16 @@ User asked: "Scrape stock prices."
 
 ```
 
-### `grimoire/` (Skills)
-
-Folder containing Python scripts Auric has written.
-
-* *Example:* `grimoire/docker_fix.py`
-
 ### `memories/` (Context)
 
 Long-term semantic memory (`MEMORY.md`) and current focus (`FOCUS.md`).
 
 * *Example:* `.auric/memories/MEMORY.md`
+
+
+### ChromaDB
+
+Auric uses ChromaDB to store its long-term memory and perform hybrid search. The database is located at `.auric/chroma_db`
 
 ---
 
@@ -152,10 +186,10 @@ See `CONTRIBUTING.md` for details on how to set up the dev environment and run t
 
 ### Roadmap
 
-* [ ] More Incantations (Skills)
+* [ ] More Spells (Skills)
 * [ ] More Pacts (Channels)
 * [ ] Voice Interface via Whisper/TTS.
-* [ ] Full GUI Web Dashboard (React).
+* [ ] Support for Knowledge graphs
 
 ---
 

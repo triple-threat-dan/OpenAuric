@@ -27,8 +27,9 @@ class ToolRegistry:
     Acts as an MCP Client/Host, bundling internal tools and connecting to external ones.
     """
 
-    def __init__(self, config: AuricConfig):
+    def __init__(self, config: AuricConfig, librarian=None):
         self.config = config
+        self.librarian = librarian
         self._internal_tools: Dict[str, Callable] = {}
         self._spells: Dict[str, Dict[str, Any]] = {} # name -> spell_data
         
@@ -36,8 +37,13 @@ class ToolRegistry:
         self._register_internal_tool(self.list_files)
         self._register_internal_tool(self.read_file)
         self._register_internal_tool(self.write_file)
+        self._register_internal_tool(self.append_file)
         self._register_internal_tool(self.execute_powershell)
         self._register_internal_tool(self.run_python)
+        
+        # Register Memory Tools
+        if self.librarian:
+            self._register_internal_tool(self.memory_search)
         
         # Initialize Sandbox
         self.sandbox = SandboxManager(config)
@@ -66,61 +72,46 @@ class ToolRegistry:
                 if skill_file.exists():
                     self._load_single_spell(skill_file)
         
-        logger.info(f"Loaded {len(self._spells)} spells.")
-        self._generate_spells_index()
+        logger.debug(f"Loaded {len(self._spells)} spells.")
 
     def _load_single_spell(self, path: Path):
         """Parses a single SKILL.md and registers the spell."""
         try:
             content = path.read_text(encoding="utf-8")
-            # Simple YAML frontmatter parser
-            if content.startswith("---"):
-                end_frontmatter = content.find("---", 3)
-                if end_frontmatter != -1:
-                    frontmatter_str = content[3:end_frontmatter]
+            
+            # Use regex to find frontmatter between --- markers
+            parts = re.split(r"^---$", content, maxsplit=2, flags=re.MULTILINE)
+            
+            if len(parts) >= 3:
+                frontmatter_str = parts[1].strip()
+                instructions = parts[2].strip()
+                
+                meta = {}
+                # Extract key: value pairs, potentially spanning multiple lines (not indented)
+                matches = re.finditer(r"^(\w+):\s*(.*?)(?=\n\w+:|\Z)", frontmatter_str, re.DOTALL | re.MULTILINE)
+                for m in matches:
+                    meta[m.group(1)] = m.group(2).strip()
+                
+                if "name" in meta:
+                    name = meta["name"]
                     
-                    meta = {}
-                    for line in frontmatter_str.splitlines():
-                        if ":" in line:
-                            key, val = line.split(":", 1)
-                            meta[key.strip()] = val.strip()
-                    
-                    if "name" in meta:
-                        name = meta["name"]
-                        instructions = content[end_frontmatter+3:].strip()
-                        
-                        # Parse parameters if available (using a simple YAML-like parser for the dict structure)
-                        # Since we don't have PyYAML, we'll need to rely on the user providing valid JSON-like structure 
-                        # or simple key-value pairs if we want to avoid complex parsing.
-                        # Wait, the meta logic above only handles simple key:value lines.
-                        # Let's import yaml if available, or just fallback to the hardcoded default for now
-                        # but ideally we should parse the 'parameters' block.
-                        
-                        # Actually, better yet, let's just use json.loads if the user provides parameters as a JSON string in a specific field?
-                        # Or, since we want to support this properly, let's assume we can add PyYAML to dependencies later.
-                        # For now, let's look for a hacky way or just use a `parameters_json` field in frontmatter for safety.
-                        
-                        # Pivot: As I cannot easily add PyYAML dependency right now without user permission/restart.
-                        # I will modify the `SKILL.md` to use a `parameters_json` field which I can parse with json.loads.
-                        # This is robust and doesn't require new deps.
-                        
-                        parameters = {}
-                        if "parameters_json" in meta:
-                            try:
-                                parameters = json.loads(meta["parameters_json"])
-                            except json.JSONDecodeError:
-                                logger.error(f"Failed to parse parameters_json for {name}")
+                    parameters = {}
+                    if "parameters_json" in meta:
+                        try:
+                            parameters = json.loads(meta["parameters_json"])
+                        except json.JSONDecodeError:
+                            logger.error(f"Failed to parse parameters_json for {name}")
 
-                        spell_data = {
-                            "name": name,
-                            "description": meta.get("description", "No description"),
-                            "path": path.parent,
-                            "instructions": instructions,
-                            "script": self._find_script(path.parent),
-                            "parameters": parameters
-                        }
-                        self._spells[name] = spell_data
-                        logger.debug(f"Loaded spell: {name}")
+                    spell_data = {
+                        "name": name,
+                        "description": meta.get("description", "No description"),
+                        "path": path.parent,
+                        "instructions": instructions,
+                        "script": self._find_script(path.parent),
+                        "parameters": parameters
+                    }
+                    self._spells[name] = spell_data
+                    logger.debug(f"Loaded spell: {name}")
         except Exception as e:
             logger.error(f"Failed to load spell from {path}: {e}")
 
@@ -135,25 +126,55 @@ class ToolRegistry:
                     return script
         return None
 
-    def _generate_spells_index(self):
-        """Generates the SPELLS.md file for system prompt inclusion."""
-        index_path = self.spells_dir.parent / "SPELLS.md"
-        try:
-            lines = ["# Available Spells", ""]
-            for name, data in self._spells.items():
-                lines.append(f"## {name}")
-                lines.append(f"**Description**: {data['description']}")
-                lines.append(f"**Format**: To use, output a tool call for `{name}`.")
-                if data["script"]:
-                    lines.append("**Type**: Executable (Auto-runs script)")
-                else:
-                    lines.append("**Type**: Instruction (Returns procedure)")
-                lines.append("")
+    def get_internal_tools_context(self) -> str:
+        """
+        Generates a summary of available internal tools for the system prompt.
+        """
+        if not self._internal_tools:
+            return ""
+
+        lines = ["## Internal Standard Tools", ""]
+        for name, func in self._internal_tools.items():
+            doc = inspect.getdoc(func) or "No description available."
+            # Only take the first paragraph of the docstring for brevity in text
+            summary = doc.split("\n\n")[0].strip()
+            lines.append(f"- **{name}**: {summary}")
+        
+        lines.append("- **CRITICAL**: You must actively use the memory_search tool to search your Grimoire/Memories for past context, user instructions, or task status. They are NOT provided automatically. PREFER this over reading files directly.")
+        lines.append("- Use the read_file tool only when you need to read a specific file's exact content, OR when memory_search failed to find memories.")
+
+        return "\n".join(lines)
+
+    def get_spells_context(self) -> str:
+        """
+        Generates the dynamic context string for available spells.
+        Includes name, relative path, and frontmatter.
+        """
+        if not self._spells:
+            return ""
+
+        lines = ["## Available Spells", "To initiate a spell, use the tool `spell_crafter` or the specific spell tool if available.", ""]
+        
+        for name, data in self._spells.items():
+            # Calculate relative path from CWD (AURIC_ROOT/..) if possible, else just use path
+            try:
+                # data['path'] is the dir containing SKILL.md
+                rel_path = data['path'].relative_to(Path.cwd())
+            except ValueError:
+                rel_path = data['path']
+
+            lines.append(f"### {name}")
+            lines.append(f"**Path**: {rel_path}")
+            lines.append(f"**Description**: {data['description']}") 
+            # Add parameters if they exist
+            if data.get("parameters"):
+                lines.append(f"**Parameters**:")
+                lines.append(f"```json")
+                lines.append(f"{json.dumps(data['parameters'])}")
+                lines.append(f"```")
+            lines.append("")
             
-            index_path.parent.mkdir(parents=True, exist_ok=True)
-            index_path.write_text("\n".join(lines), encoding="utf-8")
-        except Exception as e:
-            logger.error(f"Failed to write SPELLS.md: {e}")
+        return "\n".join(lines)
 
     # ==========================================================================
     # Internal Standard Library Tools
@@ -224,6 +245,21 @@ class ToolRegistry:
             return f"Error reading file: {str(e)}"
 
     @staticmethod
+    def _sanitize_content(path: str, content: str) -> str:
+        """
+        Helper to sanitize content before writing/appending.
+        Unescapes literal \\n sequences if appropriate for the file type.
+        """
+        if str(path).lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
+            if "\\n" in content:
+                # Unescape literal backslash+n unless preceded by a backslash
+                before = content
+                content = re.sub(r'(?<!\\)\\n', '\\n', content)
+                if content != before:
+                    logger.info(f"Automatically unescaped content for {path}")
+        return content
+
+    @staticmethod
     def write_file(path: str, content: str) -> str:
         """
         Write content to a file. Overwrites existing content. Supports `~` expansion.
@@ -237,18 +273,8 @@ class ToolRegistry:
         """
         try:
             file_path = Path(path).expanduser().resolve()
+            content = ToolRegistry._sanitize_content(path, content)
             
-            # Heuristic to fix common LLM double-escaping issue (e.g. for MEMORY.md)
-            # If content is meant to be a markdown/text file but contains literal "\n" 
-            # sequences without any actual newlines, we assume it was improperly escaped.
-            if str(file_path).lower().endswith(('.md', '.txt', '.rst')) and isinstance(content, str):
-                 if "\\n" in content and "\n" not in content:
-                      # Unescape literal backslash+n unless preceded by a backslash
-                      # This handles the case where the LLM wrote "Line 1\nLine 2" as a single line
-                      # but preserves "Line 1\\nLine 2" (literal \n).
-                      content = re.sub(r'(?<!\\)\\n', '\n', content)
-                      logger.info(f"Automatically unescaped content for {path}")
-
             # Ensure parent directory exists
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -258,6 +284,34 @@ class ToolRegistry:
              return f"Error: Permission denied writing to '{path}'."
         except Exception as e:
             return f"Error writing file: {str(e)}"
+
+    @staticmethod
+    def append_file(path: str, content: str) -> str:
+        """
+        Appends content to a file. Creates file if it doesn't exist. Supports `~` expansion.
+
+        Args:
+            path: The path to the file to append to.
+            content: The content to append.
+
+        Returns:
+            Success message or error message.
+        """
+        try:
+            file_path = Path(path).expanduser().resolve()
+            content = ToolRegistry._sanitize_content(path, content)
+            
+            # Ensure parent directory exists
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(file_path, "a", encoding="utf-8") as f:
+                f.write(content)
+                
+            return f"Successfully appended to {path}"
+        except PermissionError:
+             return f"Error: Permission denied appending to '{path}'."
+        except Exception as e:
+            return f"Error appending file: {str(e)}"
 
     @staticmethod
     def execute_powershell(command: str) -> str:
@@ -271,6 +325,9 @@ class ToolRegistry:
             The stdout output or error message.
         """
         try:
+            # Normalize path separators for Windows (PowerShell doesn't always like mixed / and \)
+            # command = command.replace("/", "\\")  <-- REMOVED: Breaks URLs! PowerShell handles / fine in strings.
+            
             # We use powershell -Command "..."
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
             
@@ -305,6 +362,32 @@ class ToolRegistry:
         except Exception as e:
             return f"Error executing Python code: {str(e)}"
 
+    def memory_search(self, query: str) -> str:
+        """
+        Search the agent's memory (Grimoire) for relevant information using semantic search.
+        
+        Args:
+            query: The search query to find relevant memories.
+            
+        Returns:
+            A formatted string of relevant memory snippets.
+        """
+        if not self.librarian:
+            return "Error: Librarian not available."
+            
+        results = self.librarian.search(query)
+        if not results:
+            return "No relevant memories found."
+            
+        output = []
+        for res in results:
+            source = res['metadata'].get('filename', 'Unknown')
+            content = res['content']
+            distance = res.get('distance', 0)
+            output.append(f"--- from {source} (dist: {distance:.4f}) ---\n{content}\n")
+            
+        return "\n".join(output)
+
     # ==========================================================================
     # Registry Operations
     # ==========================================================================
@@ -331,6 +414,11 @@ class ToolRegistry:
                     result = await func(**arguments)
                 else:
                     result = func(**arguments)
+                
+                # LOGGING
+                from auric.core.system_logger import SystemLogger
+                SystemLogger.get_instance().log("TOOL_EXECUTION", {"name": name, "args": arguments, "result": str(result)[:1000]})
+                
                 return str(result)
             except TypeError as e:
                  return f"Error executing tool '{name}': Invalid arguments - {str(e)}"
@@ -340,7 +428,10 @@ class ToolRegistry:
 
         # 2. Spells
         if name in self._spells:
-            return await self._execute_spell(name, arguments)
+            res = await self._execute_spell(name, arguments)
+            from auric.core.system_logger import SystemLogger
+            SystemLogger.get_instance().log("SPELL_EXECUTION", {"name": name, "args": arguments, "result": str(res)[:1000]})
+            return res
         
         return f"Error: Tool or Spell '{name}' not found."
 
@@ -459,7 +550,21 @@ class ToolRegistry:
         Uses introspection of type hints and docstrings.
         """
         name = func.__name__
-        doc = inspect.getdoc(func) or "No description available."
+        full_doc = inspect.getdoc(func) or "No description available."
+        
+        # Simple docstring parser to extract main description and parameter descriptions
+        doc_parts = re.split(r'\n\s*(?:Args|Parameters):\s*\n', full_doc, flags=re.IGNORECASE)
+        main_doc = doc_parts[0].strip()
+        
+        param_descriptions = {}
+        if len(doc_parts) > 1:
+            # Look for "param_name: description" or "param_name (type): description"
+            param_section = doc_parts[1]
+            matches = re.finditer(r'^\s*(\w+)(?:\s*\(.*?\))?:\s*(.*)', param_section, re.MULTILINE)
+            for match in matches:
+                p_name, p_desc = match.groups()
+                param_descriptions[p_name] = p_desc.strip()
+
         sig = inspect.signature(func)
         
         parameters = {
@@ -486,7 +591,7 @@ class ToolRegistry:
             
             parameters["properties"][param_name] = {
                 "type": param_type,
-                "description": param_name
+                "description": param_descriptions.get(param_name, param_name)
             }
             
             if param.default == inspect.Parameter.empty:
@@ -494,6 +599,6 @@ class ToolRegistry:
                 
         return {
             "name": name,
-            "description": doc,
+            "description": main_doc,
             "parameters": parameters
         }

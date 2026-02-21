@@ -33,7 +33,7 @@ fi
 
 if [ -d "$AURIC_HOME" ]; then
     rm -rf "$AURIC_HOME"
-    echo "✅ ~/.auric directory obliterated."
+    echo "✅ ./.auric directory obliterated."
 fi
 
 # Uninstall Package

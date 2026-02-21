@@ -1,1 +1,0 @@
-# Memory\nThis is your long-term memory...\n\n# Facts\n- Dan's eyes are blue and he likes ice cream and dinosaurs\n\n# Experiences\n- Your creator, Dan, recently developed you...\n\n# Lessons Learned\n- 

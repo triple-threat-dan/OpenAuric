@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Logs | OpenAuric</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .log-layout {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 10px;
+            box-sizing: border-box;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+
+        .filters {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        .filter-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+        }
+
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        .log-table-container {
+            flex: 1;
+            overflow: auto;
+            border: 1px solid var(--border-color);
+            background: var(--panel-bg);
+            border-radius: 4px;
+        }
+
+        table.log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+        }
+
+        table.log-table th {
+            text-align: left;
+            background: rgba(0, 0, 0, 0.5);
+            border-bottom: 2px solid var(--border-color);
+            padding: 10px;
+            color: var(--accent-color);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        table.log-table td {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 8px 10px;
+            vertical-align: top;
+            color: var(--text-color);
+        }
+
+        .level-INFO {
+            color: #4caf50;
+        }
+
+        .level-WARNING {
+            color: var(--gold);
+        }
+
+        .level-ERROR {
+            color: var(--error-color);
+        }
+
+        .level-DEBUG {
+            color: var(--muted-text);
+        }
+
+        .event-type {
+            font-weight: bold;
+            color: var(--strong-cyan);
+        }
+
+        .json-data {
+            white-space: pre-wrap;
+            color: var(--muted-text);
+            max-height: 60px;
+            overflow-y: auto;
+            font-size: 0.8rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 5px;
+            border-radius: 2px;
+        }
+
+        .json-data.expanded {
+            max-height: none;
+        }
+
+        .expand-btn {
+            background: none;
+            border: none;
+            color: var(--accent-secondary);
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: 5px;
+            padding: 0;
+        }
+
+        .timestamp {
+            color: var(--muted-text);
+            white-space: nowrap;
+        }
+
+        .back-btn {
+            text-decoration: none;
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .back-btn:hover {
+            background: var(--accent-color);
+            color: #000;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="log-layout">
+        <div class="header-bar">
+            <div class="logo-area">
+                <h1>SYSTEM<span class="highlight">LOGS</span></h1>
+            </div>
+            <a href="/" class="back-btn">Back to Terminal</a>
+        </div>
+
+        <div class="filters">
+            <input type="text" id="filter-event" class="filter-input" placeholder="Filter by Event...">
+            <input type="text" id="filter-session" class="filter-input" placeholder="Filter by Session...">
+            <button id="refresh-btn" class="action-btn">Refresh</button>
+            <label style="font-size: 0.9em; color: var(--muted-text); display: flex; align-items: center; gap: 5px;">
+                <input type="checkbox" id="auto-refresh"> Auto-Refresh
+            </label>
+        </div>
+
+        <div class="log-table-container">
+            <table class="log-table">
+                <thead>
+                    <tr>
+                        <th width="150px">TIME</th>
+                        <th width="80px">LVL</th>
+                        <th width="150px">EVENT</th>
+                        <th width="100px">SESSION</th>
+                        <th>DATA</th>
+                    </tr>
+                </thead>
+                <tbody id="logs-body">
+                    <!-- Logs injected here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const logsBody = document.getElementById('logs-body');
+        let autoRefreshInterval = null;
+
+        // AUTHENTICATION LOGIC
+        const authToken = localStorage.getItem('auric_token');
+
+        if (!authToken) {
+            alert("Security Alert: No active credentials found. Redirecting to root.");
+            window.location.href = "/";
+        }
+
+        async function fetchLogs() {
+            try {
+                // ADDED AUTH HEADER
+                const res = await fetch('/api/system_logs?limit=200', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (res.status === 401) {
+                    // Token expired or invalid
+                    alert("Security Alert: Credentials expired. Redirecting to root.");
+                    window.location.href = "/";
+                    return;
+                }
+
+                if (!res.ok) {
+                    console.error("Fetch failed:", res.statusText);
+                    return;
+                }
+
+                const data = await res.json();
+                renderLogs(data.lines);
+            } catch (err) {
+                console.error("Failed to fetch logs:", err);
+            }
+        }
+
+        function renderLogs(logs) {
+            logsBody.innerHTML = '';
+
+            const eventFilter = document.getElementById('filter-event').value.toLowerCase();
+            const sessionFilter = document.getElementById('filter-session').value.toLowerCase();
+
+            logs.forEach(log => {
+                // Filters
+                if (eventFilter && !log.event.toLowerCase().includes(eventFilter)) return;
+                if (sessionFilter && log.session_id && !log.session_id.toLowerCase().includes(sessionFilter)) return;
+
+                const row = document.createElement('tr');
+
+                // Timestamp
+                const tsCell = document.createElement('td');
+                tsCell.className = "timestamp";
+                tsCell.textContent = log.timestamp ? log.timestamp.split('T')[1].split('.')[0] : '';
+                tsCell.title = log.timestamp;
+                row.appendChild(tsCell);
+
+                // Level
+                const lvlCell = document.createElement('td');
+                lvlCell.className = `level-${log.level}`;
+                lvlCell.textContent = log.level;
+                row.appendChild(lvlCell);
+
+                // Event
+                const evtCell = document.createElement('td');
+                evtCell.className = "event-type";
+                evtCell.textContent = log.event;
+                row.appendChild(evtCell);
+
+                // Session
+                const sessCell = document.createElement('td');
+                sessCell.textContent = log.session_id ? log.session_id.substring(0, 8) + '...' : '-';
+                sessCell.title = log.session_id;
+                row.appendChild(sessCell);
+
+                // Data
+                const dataCell = document.createElement('td');
+                const jsonDiv = document.createElement('div');
+                jsonDiv.className = "json-data";
+
+                // Pretty print JSON
+                jsonDiv.textContent = JSON.stringify(log.data, null, 2);
+
+                // Expand button if long
+                if (jsonDiv.textContent.split('\n').length > 2) {
+                    const btn = document.createElement('button');
+                    btn.className = 'expand-btn';
+                    btn.textContent = '[+]';
+                    btn.onclick = () => {
+                        jsonDiv.classList.toggle('expanded');
+                        btn.textContent = jsonDiv.classList.contains('expanded') ? '[-]' : '[+]';
+                    };
+                    dataCell.appendChild(btn);
+                }
+
+                dataCell.appendChild(jsonDiv);
+                row.appendChild(dataCell);
+
+                logsBody.appendChild(row);
+            });
+        }
+
+        document.getElementById('refresh-btn').onclick = fetchLogs;
+
+        document.getElementById('auto-refresh').onchange = (e) => {
+            if (e.target.checked) {
+                autoRefreshInterval = setInterval(fetchLogs, 2000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        };
+
+        // Initial load
+        fetchLogs();
+    </script>
+</body>
+
+</html>

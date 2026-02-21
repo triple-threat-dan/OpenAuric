@@ -29,6 +29,7 @@ from .database import AuditLogger
 # from auric.interface.tui.app import AuricTUI # TUI Disabled
 from auric.interface.server.routes import router as dashboard_router
 from rich.console import Console
+from rich.text import Text
 from datetime import datetime
 
 logger = logging.getLogger("auric.daemon")
@@ -198,7 +199,11 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
             
     # Launch server as a background task
     # Apply filter to uvicorn access log
-    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+    access_logger = logging.getLogger("uvicorn.access")
+    if config.gateway.disable_access_log:
+        access_logger.disabled = True
+    else:
+        access_logger.addFilter(EndpointFilter())
     
     api_task = asyncio.create_task(safe_serve())
     logger.info(f"API Server starting on {config.gateway.host}:{config.gateway.port}")
@@ -210,6 +215,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     from auric.memory.focus_manager import FocusManager
     from auric.brain.rlm import RLMEngine
     from auric.spells.tool_registry import ToolRegistry
+    from auric.core.session_router import SessionRouter
 
     gateway = LLMGateway(config, audit_logger=audit_logger)
     
@@ -219,11 +225,21 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
-    tool_registry = ToolRegistry(config)
+    tool_registry = ToolRegistry(config, librarian=librarian)
+    session_router = SessionRouter(AURIC_ROOT / "active_sessions.json")
     
     # Inject into API state and add reload endpoint
     api_app.state.tool_registry = tool_registry
     api_app.state.focus_manager = focus_manager
+    api_app.state.gateway = gateway
+    api_app.state.session_router = session_router
+
+    # Trigger initial re-indexing (background task)
+    asyncio.create_task(librarian.start_reindexing())
+
+    # Schedule periodic re-indexing (e.g., every hour)
+    scheduler.add_job(librarian.start_reindexing, 'interval', hours=1)
+    logger.info("Scheduled periodic memory re-indexing (every 1 hour).")
 
     # If we started a NEW session (fresh install or no DB), clear focus
     if not last_session_id:
@@ -250,6 +266,23 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
         log_callback=log_to_bus
     )
 
+    # 5.1 Schedule Dream Cycle
+    from auric.memory.chronicles import perform_dream_cycle
+    
+    dream_time_str = config.agents.dream_time
+    try:
+        hour, minute = map(int, dream_time_str.split(':'))
+        scheduler.add_job(
+            perform_dream_cycle, 
+            'cron', 
+            hour=hour, 
+            minute=minute, 
+            args=[audit_logger, gateway, config]
+        )
+        logger.info(f"Dream Cycle scheduled for {dream_time_str} daily.")
+    except ValueError:
+        logger.error(f"Invalid dream_time format '{dream_time_str}'. Expected HH:MM. Dream Cycle disabled.")
+
     # 6. Start Brain Loop & Dispatcher
     async def dispatcher_loop():
         logger.info("Message Dispatcher started.")
@@ -266,13 +299,25 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      color = "white"
                      if level == "ERROR": color = "bold red"
                      elif level == "WARNING": color = "yellow"
-                     elif level == "THOUGHT": color = "dim cyan"
+                     elif level == "THOUGHT": 
+                         color = "dim cyan"
+                         # Truncate thoughts for console clarity
+                         lines = text.split('\n')
+                         first_line = lines[0] if lines else ""
+                         if len(first_line) > 100:
+                             first_line = first_line[:97] + "..."
+                         text_obj = Text(f"[{timestamp}] [{level}] {first_line}")
+                         if len(lines) > 1 or len(text) > 100:
+                              text_obj.append(" (more...)", style="dim")
+
                      elif level == "AGENT": color = "green"
                      elif level == "USER": color = "blue"
-                     elif level == "TOOL": color = "magenta"
+                     elif level == "HEARTBEAT": color = "magenta"
+                     elif level == "TOOL": color = "bold yellow"
                      
-                     from rich.text import Text
-                     text_obj = Text(f"[{timestamp}] [{level}] {text}")
+                     if level != "THOUGHT": # Already created text_obj for THOUGHT
+                        text_obj = Text(f"[{timestamp}] [{level}] {text}")
+                     
                      text_obj.stylize(color)
                      console.print(text_obj)
                 else:
@@ -287,8 +332,12 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      web_log_buffer.append(f"[{level}] {text}")
                      
                      # Chat History filters
-                     if level in ("USER", "AGENT", "THOUGHT"):
-                          web_chat_history.append(msg)
+                     if level in ("USER", "AGENT", "THOUGHT", "HEARTBEAT", "TOOL"):
+                          # Only show non-heartbeat messages in the Web UI Chat
+                          # Heartbeats are still logged to DB below
+                          if msg.get("source") != "HEARTBEAT":
+                              web_chat_history.append(msg)
+                              
                           # Persist to DB with current session ID
                           # Prefer session_id from message, fallback to global state
                           msg_sid = msg.get("session_id")
@@ -343,12 +392,41 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      # Inject Session ID from Global State if available
                      current_sid = getattr(api_app.state, "current_session_id", None)
                      
-                     # If source is PACT, we want to unify the session
+                     # Session Management for PACTs
                      if source == "PACT" and not session_id:
+                         # Use SessionRouter to get consistent but rotatable ID
+                         # Context is platform:sender_id (e.g. discord:123456789)
+                         context_key = f"{platform}:{sender_id}"
+                         session_id = session_router.get_active_session_id(context_key)
+                         
+                         # If session_id is None, the context was explicitly closed.
+                         # Create a brand new session (never reactivate a closed one).
+                         if session_id is None:
+                             logger.info(f"Context '{context_key}' was closed. Creating fresh session.")
+                             session_id = session_router.start_new_session(context_key)
+                         
+                         # Ensure Session Exists in DB (metadata update)
+                         if api_app.state.audit_logger:
+                             existing = await api_app.state.audit_logger.get_session(session_id)
+                             if not existing:
+                                 # Generate Name
+                                 name = f"Pact Session {session_id[:8]}"
+                                 if platform == "discord" and isinstance(item, dict) and "event" in item:
+                                     evt = item["event"]
+                                     if evt.metadata.get("is_dm"):
+                                          name = f"@{evt.metadata.get('author_display')}"
+                                     else:
+                                          name = f"#{evt.metadata.get('channel_name')}"
+                                 
+                                 logger.info(f"Creating new PACT session: {session_id} ({name})")
+                                 await api_app.state.audit_logger.create_session(name=name, session_id=session_id)
+                     
+                     # If WEB/Other and no session, use current
+                     if not session_id:
                          session_id = current_sid
 
                      await internal_bus.put({
-                         "level": "USER",
+                         "level": "HEARTBEAT" if source == "HEARTBEAT" else "USER",
                          "message": user_msg,
                          "source": source,
                          "session_id": session_id # Pass it along for logging
@@ -358,7 +436,8 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                      await internal_bus.put({
                          "level": "THOUGHT",
                          "message": f"Thinking on: {user_msg}",
-                         "source": "BRAIN"
+                         "source": "BRAIN",
+                         "session_id": session_id
                      })
                      
                      logger.info(f"Thinking on: {user_msg}")
@@ -371,10 +450,31 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                          if source == "PACT" and platform and sender_id:
                              asyncio.create_task(pact_manager.trigger_typing(platform, sender_id))
 
-                         response = await rlm_engine.think(user_msg, session_id=session_id)
+                         # Select model tier based on source
+                         model_tier = "heartbeat_model" if source == "HEARTBEAT" else "smart_model"
+                         
+                         # Optimization: Lean Heartbeat Check
+                         if source == "HEARTBEAT":
+                             try:
+                                 # Use raw content if available (cleaner signal), else fallback to full message
+                                 check_target = item.get("heartbeat_source_content", user_msg)
+                                 is_necessary = await rlm_engine.check_heartbeat_necessity(check_target)
+                                 if not is_necessary:
+                                     logger.info("🛌 Heartbeat skipped: No actionable tasks for this time.")
+                                     await internal_bus.put({
+                                         "level": "HEARTBEAT",
+                                         "message": "🛌 Heartbeat skipped: No actionable tasks for this time.",
+                                         "source": "BRAIN",
+                                         "session_id": session_id
+                                     })
+                                     continue # Skip full think cycle
+                             except Exception as hb_err:
+                                 logger.error(f"Heartbeat Check Failed: {hb_err}. Proceeding to think anyway.")
+
+                         response = await rlm_engine.think(user_msg, session_id=session_id, model_tier=model_tier)
                          
                          # Reply to Source
-                         if source in ["WEB", "HEARTBEAT"]: # Handle HEARTBEAT same as WEB for now logic-wise
+                         if source in ["WEB", "HEARTBEAT", "CLI"]: # Handle HEARTBEAT same as WEB for now logic-wise
                               await internal_bus.put({
                                   "level": "AGENT",
                                   "message": response,
@@ -414,6 +514,10 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                                  "message": f"Error interacting with PACT ({platform}): {e}", 
                                  "source": "BRAIN"
                              })
+                     finally:
+                         # Always stop typing indicator if it was a PACT
+                         if source == "PACT" and platform and sender_id:
+                             await pact_manager.stop_typing(platform, sender_id)
 
             except asyncio.CancelledError:
                 logger.info("Brain Loop cancelled.")
