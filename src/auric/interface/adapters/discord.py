@@ -55,8 +55,10 @@ class AuricDiscordClient(discord.Client):
         elif self.user in message.mentions:
             should_respond = True
             
-        # 3. Name Mention
-        elif re.search(rf"\b{re.escape(self.pact.agent_name)}\b", message.content, re.IGNORECASE):
+        # 3. Name Mention (Heuristics: Start or End of message)
+        elif (
+            re.match(rf"^{re.escape(self.pact.agent_name)}\b\s*[,\:]?\s*", message.content.strip(), re.IGNORECASE)
+        ):
             should_respond = True
             
         # 4. Reply to Bot
