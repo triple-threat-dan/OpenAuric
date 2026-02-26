@@ -521,7 +521,14 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
                 # Wait for command
                 item = await command_bus.get()
                 print(f"🧠 Brain: Received item: {item.keys() if isinstance(item, dict) else item}")
-                asyncio.create_task(process_item(item))
+                
+                # Await the processing so the agent works strictly sequentially
+                await process_item(item)
+                
+                # Wait for the dispatcher loop to finish processing everything in the internal bus
+                # This ensures the agent's response is fully logged/persisted before taking the next item.
+                await internal_bus.join()
+                
             except asyncio.CancelledError:
                 logger.info("Brain Loop cancelled.")
                 break
