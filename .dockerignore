@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+.github/
+
+# Python caching and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# Secrets (These should be injected at runtime via docker-compose, not built into the image)
+.env
+.secrets/
+oauth.json
+
+# OS & IDE files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Project-specific state and databases
+# (These are mounted via the volume in docker-compose, so they don't need to be in the build context)
+*.sqlite3
+*.db
+*.pid
+.auric/

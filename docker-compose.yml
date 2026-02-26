@@ -1,0 +1,10 @@
+services:
+  openauric:
+    build: .
+    container_name: auric_linux_bot
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    ports:
+      - "127.0.0.1:8069:8069" # <--- This maps Windows Port : Container Port
+    tty: true
