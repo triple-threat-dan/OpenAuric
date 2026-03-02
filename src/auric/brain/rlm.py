@@ -477,7 +477,7 @@ class RLMEngine:
         # 3. The Time & Environment
         now = datetime.now().astimezone()
         parts.append(f"## Current Time\n{now.isoformat()} {now.tzname()}")
-        parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: When using `execute_powershell`, standard PowerShell syntax applies.")
+        parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: Use `execute_powershell` (standard PowerShell syntax) on Windows, or `execute_bash` (standard Bash syntax) on Linux/macOS.")
 
         # 4 Memory & Abilities
         if memory_text := self._read_section(AURIC_ROOT / "memories" / "MEMORY.md"):
@@ -487,7 +487,7 @@ class RLMEngine:
         # 5. Tool Usage Instructions
         tools_intro = [
             "## Tool Usage Instructions",
-            "You have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**",
+            "You have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, execute_bash, or run_python), OR create the spell to do it using the spell_crafter spell.**",
             ""
         ]
 
