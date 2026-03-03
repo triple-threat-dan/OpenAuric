@@ -1,19 +1,21 @@
 """
 API Routes for the Arcane Library (Web Dashboard).
 """
+
 import asyncio
-from typing import Dict, Any, List
+import json
+import logging
+from collections import deque
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
-from auric.core.config import AURIC_WORKSPACE_DIR, AURIC_ROOT
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+
 from auric.interface.server.auth import verify_token
 
-from auric.memory.focus_manager import FocusManager
-
+logger = logging.getLogger("auric.routes")
 router = APIRouter(dependencies=[Depends(verify_token)])
 
 # --- Models ---
@@ -21,19 +23,14 @@ router = APIRouter(dependencies=[Depends(verify_token)])
 class ChatRequest(BaseModel):
     message: str
     source: str = "WEB"
-    session_id: str = None
+    session_id: Optional[str] = None
 
 class StatusResponse(BaseModel):
     focus_state: Dict[str, Any]
-    logs: List[str] # Last 100 lines
-    chat_history: List[Dict[str, Any]] # Last 50 messages
+    logs: List[str]
+    chat_history: List[Dict[str, Any]]
     stats: Dict[str, str]
-    current_session_id: str = None
-
-class SessionSummary(BaseModel):
-    session_id: str
-    last_active: str = None
-    message_count: int
+    current_session_id: Optional[str] = None
 
 class LLMLogsResponse(BaseModel):
     items: List[Dict[str, Any]]
@@ -43,68 +40,53 @@ class RenameRequest(BaseModel):
     name: str
 
 class NewSessionRequest(BaseModel):
-    context: str = "web" # "web" or "global" or specific context like "discord:123"
-
+    context: str = "web"
 
 # --- Routes ---
 
 @router.get("/api/status", response_model=StatusResponse)
 async def get_status(request: Request):
-    """
-    Returns the current state of the agent:
-    - Focus (from FOCUS.md)
-    - Recent logs (from in-memory buffer, if available, or just empty for now)
-    - System stats
-    """
-    # 1. Get Focus State
-    # We assume the FocusManager is initialized somewhere or we act on the file directly.
-    # Since we need to read the file, let's create a temporary manager or read directly.
-    # For performance, maybe we should have a singleton injected, but for now:
-    try:
-        # Assuming standard path for now, or we could inject config
-        focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
-        focus_manager = FocusManager(focus_path)
-        focus_model = focus_manager.load()
-        focus_data = focus_model.model_dump()
-        focus_data['state'] = focus_model.state.value # Convert enum to string
-    except Exception as e:
-        focus_data = {"error": str(e)}
-
-    # 2. Get Logs & Chat History
-    # We use the buffers injected by the daemon
-    logs = list(getattr(request.app.state, "web_log_buffer", ["System initialized."]))
+    """Returns the current engine status, focus state, and recent history."""
+    state = request.app.state
     
-    # Try to get persistent history from DB
-    audit_logger = getattr(request.app.state, "audit_logger", None)
+    # 1. Focus State
+    focus_manager = getattr(state, "focus_manager", None)
+    if focus_manager:
+        try:
+            focus_model = focus_manager.load()
+            focus_data = focus_model.model_dump()
+            focus_data['state'] = focus_model.state.value
+        except Exception as e:
+            focus_data = {"error": f"Focus load error: {e}"}
+    else:
+        focus_data = {"error": "FocusManager not initialized"}
+
+    # 2. Logs & Chat History
+    logs = list(getattr(state, "web_log_buffer", ["System initialized."]))
     chat_history = []
     
-    current_sid = getattr(request.app.state, "current_session_id", None)
+    audit_logger = getattr(state, "audit_logger", None)
+    current_sid = getattr(state, "current_session_id", None)
     
     if audit_logger:
         try:
-            # FIX: Filter by current session ID to prevent bleeding
             db_messages = await audit_logger.get_chat_history(limit=50, session_id=current_sid)
-            # Convert DB model to dict format expected by frontend
-            for msg in db_messages:
-                chat_history.append({
-                    "level": msg.role,
-                    "message": msg.content,
-                    "source": "DB" # Or infer from role
-                })
+            chat_history = [
+                {"level": msg.role, "message": msg.content, "source": "DB"} 
+                for msg in db_messages
+            ]
         except Exception as e:
-            chat_history.append({"level": "ERROR", "message": f"Failed to load history: {e}"})
+            chat_history.append({"level": "ERROR", "message": f"History load error: {e}"})
     
     if not chat_history:
-        # Fallback to memory if DB empty or unavailable
-        chat_history = list(getattr(request.app.state, "web_chat_history", []))
+        chat_history = list(getattr(state, "web_chat_history", []))
 
-    # 3. Get Stats
-    config = getattr(request.app.state, "config", None)
+    # 3. Stats
+    config = getattr(state, "config", None)
     active_model = "Local (Default)"
     if config:
-        model_config = config.agents.models.get("smart_model")
-        if model_config:
-            active_model = f"{model_config.provider}/{model_config.model}"
+        if model_cfg := config.agents.models.get("smart_model"):
+            active_model = f"{model_cfg.provider}/{model_cfg.model}"
 
     stats = {
         "status": "ONLINE",
@@ -117,31 +99,26 @@ async def get_status(request: Request):
         logs=logs,
         chat_history=chat_history,
         stats=stats,
-        current_session_id=getattr(request.app.state, "current_session_id", None)
+        current_session_id=current_sid
     )
 
 @router.get("/api/sessions")
 async def get_sessions(request: Request):
-    """Returns a list of all chat sessions with active/inactive status."""
-    audit_logger = getattr(request.app.state, "audit_logger", None)
+    """Returns all chat sessions with active/inactive status."""
+    state = request.app.state
+    audit_logger = getattr(state, "audit_logger", None)
     if not audit_logger:
         return []
+        
     try:
         sessions = await audit_logger.get_sessions()
+        session_router = getattr(state, "session_router", None)
+        current_web_sid = getattr(state, "current_session_id", None)
         
-        # Cross-reference with SessionRouter to determine active status
-        session_router = getattr(request.app.state, "session_router", None)
-        current_web_sid = getattr(request.app.state, "current_session_id", None)
-        active_sids = set()
-        
-        if session_router:
-            active_sids = set(session_router.get_all_active_session_ids())
-        
-        # Also include the current web session as active
+        active_sids = set(session_router.get_all_active_session_ids()) if session_router else set()
         if current_web_sid:
             active_sids.add(current_web_sid)
         
-        # Add is_active flag to each session
         for sess in sessions:
             sess["is_active"] = sess["session_id"] in active_sids
         
@@ -151,200 +128,144 @@ async def get_sessions(request: Request):
 
 @router.get("/api/chat/{session_id}")
 async def get_session_chat(request: Request, session_id: str):
-    """Returns the chat history for a specific session."""
+    """Returns full chat history for a specific session."""
     audit_logger = getattr(request.app.state, "audit_logger", None)
     if not audit_logger:
          return []
     
     try:
         db_messages = await audit_logger.get_chat_history(limit=50, session_id=session_id)
-        chat_history = []
-        for msg in db_messages:
-            chat_history.append({
+        return [
+            {
                 "level": msg.role,
                 "message": msg.content,
                 "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
                 "source": "DB"
-            })
-        return chat_history
+            } for msg in db_messages
+        ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/api/sessions/new")
 async def new_session(request: Request, body: NewSessionRequest = None):
-    """
-    Starts a new chat session. 
-    If context is 'web' (default), it just rotates the current UI session.
-    If context is 'global', it might rotate everything (nuclear).
-    """
+    """Starts a new chat session for the given context."""
+    state = request.app.state
     context = body.context if body else "web"
-    
-    # Access SessionRouter
-    session_router = getattr(request.app.state, "session_router", None)
-    audit_logger = getattr(request.app.state, "audit_logger", None)
+    session_router = getattr(state, "session_router", None)
+    audit_logger = getattr(state, "audit_logger", None)
     
     old_id = None
     new_id = None
     
     if context == "web":
-        # 1. Archive Old Session (Web Specific)
-        old_id = getattr(request.app.state, "current_session_id", None)
-        
+        old_id = getattr(state, "current_session_id", None)
         if old_id and audit_logger:
-            gateway = getattr(request.app.state, "gateway", None)
-            if gateway:
+            if gateway := getattr(state, "gateway", None):
                  await audit_logger.summarize_session(old_id, gateway)
 
-        # 2. Create New Session
         new_id = str(uuid4())
-        request.app.state.current_session_id = new_id
+        state.current_session_id = new_id
         
-        # Create session in DB immediately
         if audit_logger:
             await audit_logger.create_session(name="New Session", session_id=new_id)
         
-        # 3. Clear in-memory history
-        chat_history = getattr(request.app.state, "web_chat_history", None)
-        if chat_history is not None:
-            chat_history.clear()
+        if (history := getattr(state, "web_chat_history", None)) is not None:
+            history.clear()
             
-        # 4. Clear Focus
-        focus_manager = getattr(request.app.state, "focus_manager", None)
-        if focus_manager:
-            focus_manager.clear()
-            
+        if focus_mgr := getattr(state, "focus_manager", None):
+            focus_mgr.clear()
     else:
-        # Specific Context (e.g. "discord:12345")
         if session_router:
             new_id = session_router.start_new_session(context)
-            # Create session in DB immediately
             if audit_logger:
                 await audit_logger.create_session(name=f"New Session ({context})", session_id=new_id)
 
-    return {"status": "New session started", "session_id": new_id, "previous_session_id": old_id, "context": context}
+    return {"status": "ok", "session_id": new_id, "previous_session_id": old_id, "context": context}
 
 @router.post("/api/sessions/closeall")
 async def close_all_sessions(request: Request):
-    """
-    Closes ALL active sessions (Nuclear Option).
-    Triggers summarization for each session before closing.
-    """
-    session_router = getattr(request.app.state, "session_router", None)
-    audit_logger = getattr(request.app.state, "audit_logger", None)
-    gateway = getattr(request.app.state, "gateway", None)
+    """Closes all active sessions and triggers summarization."""
+    state = request.app.state
+    session_router = getattr(state, "session_router", None)
+    audit_logger = getattr(state, "audit_logger", None)
+    gateway = getattr(state, "gateway", None)
     
     if not session_router:
         return {"status": "error", "message": "SessionRouter not available"}
     
-    # Get all sessions before closing (returns list of (context, session_id))
     closed_pairs = session_router.close_all_sessions()
+    web_sid = getattr(state, "current_session_id", None)
     
-    # Also handle the web session
-    web_sid = getattr(request.app.state, "current_session_id", None)
-    
-    # Summarize each closed session
     summarized = 0
     if audit_logger and gateway:
-        for context, sid in closed_pairs:
+        # Re-map for efficient checking
+        closed_sids = {sid for _, sid in closed_pairs}
+        all_to_summarize = list(closed_sids)
+        if web_sid and web_sid not in closed_sids:
+            all_to_summarize.append(web_sid)
+            
+        for sid in all_to_summarize:
             try:
                 await audit_logger.summarize_session(sid, gateway)
                 summarized += 1
             except Exception as e:
-                import logging
-                logging.getLogger("auric.routes").error(f"Failed to summarize session {sid}: {e}")
-        
-        # Summarize web session if it wasn't in the router
-        if web_sid and web_sid not in [sid for _, sid in closed_pairs]:
-            try:
-                await audit_logger.summarize_session(web_sid, gateway)
-                summarized += 1
-            except Exception:
-                pass
+                logger.error(f"Failed to summarize session {sid}: {e}")
     
-    # Rotate web session
-    from uuid import uuid4
-    new_web_sid = str(uuid4())
-    request.app.state.current_session_id = new_web_sid
+    # Reset web state
+    state.current_session_id = str(uuid4())
+    if (history := getattr(state, "web_chat_history", None)) is not None:
+        history.clear()
+    if focus_mgr := getattr(state, "focus_manager", None):
+        focus_mgr.clear()
     
-    # Clear in-memory history and focus
-    chat_history = getattr(request.app.state, "web_chat_history", None)
-    if chat_history is not None:
-        chat_history.clear()
-    focus_manager = getattr(request.app.state, "focus_manager", None)
-    if focus_manager:
-        focus_manager.clear()
-    
-    return {"status": "All sessions closed", "summarized": summarized, "closed_count": len(closed_pairs)}
+    return {"status": "ok", "summarized": summarized, "closed_count": len(closed_pairs)}
 
 @router.post("/api/sessions/{session_id}/close")
 async def close_session(request: Request, session_id: str):
-    """
-    Closes a specific session if it is active.
-    Triggers summarization before closing to preserve the summary log.
-    Marks the context as closed so the session cannot be zombied.
-    """
-    session_router = getattr(request.app.state, "session_router", None)
-    audit_logger = getattr(request.app.state, "audit_logger", None)
-    gateway = getattr(request.app.state, "gateway", None)
+    """Closes a specific active session."""
+    state = request.app.state
+    session_router = getattr(state, "session_router", None)
+    audit_logger = getattr(state, "audit_logger", None)
+    gateway = getattr(state, "gateway", None)
     
-    # Helper: summarize if possible
     async def _summarize(sid):
         if audit_logger and gateway and sid:
             try:
                 await audit_logger.summarize_session(sid, gateway)
             except Exception as e:
-                import logging
-                logging.getLogger("auric.routes").error(f"Failed to summarize session {sid}: {e}")
+                logger.error(f"Failed to summarize session {sid}: {e}")
     
     if session_router:
-        # Find context for this session_id
         active_map = session_router.list_active_contexts()
-        found_context = None
-        for ctx, sid in active_map.items():
-            if sid == session_id:
-                found_context = ctx
-                break
+        found_context = next((ctx for ctx, sid in active_map.items() if sid == session_id), None)
         
         if found_context:
-            # Summarize BEFORE closing
             await _summarize(session_id)
             session_router.close_session(found_context)
-            return {"status": "Session closed and summarized", "context": found_context}
+            return {"status": "ok", "context": found_context}
     
-    # Check if it's the web session
-    current_web_sid = getattr(request.app.state, "current_session_id", None)
-    if current_web_sid == session_id:
-        # Summarize the web session before rotating
+    if getattr(state, "current_session_id", None) == session_id:
         await _summarize(session_id)
-        new_id = str(uuid4())
-        request.app.state.current_session_id = new_id
-        
-        # Clear in-memory history and focus
-        chat_history = getattr(request.app.state, "web_chat_history", None)
-        if chat_history is not None:
-            chat_history.clear()
-        focus_manager = getattr(request.app.state, "focus_manager", None)
-        if focus_manager:
-            focus_manager.clear()
-        
-        return {"status": "Web session closed, summarized, and rotated", "new_session_id": new_id}
+        state.current_session_id = str(uuid4())
+        if (history := getattr(state, "web_chat_history", None)) is not None:
+            history.clear()
+        if focus_mgr := getattr(state, "focus_manager", None):
+            focus_mgr.clear()
+        return {"status": "ok", "rotated": True}
     
-    return {"status": "Session not found or not active"}
+    return {"status": "error", "message": "Session not found"}
 
 @router.post("/api/sessions/{session_id}/rename")
 async def rename_session(request: Request, session_id: str, body: RenameRequest):
-    """Renames a session."""
-    audit_logger = getattr(request.app.state, "audit_logger", None)
-    if audit_logger:
+    """Renames a session in the database."""
+    if audit_logger := getattr(request.app.state, "audit_logger", None):
         await audit_logger.rename_session(session_id, body.name)
     return {"status": "ok"}
 
 @router.post("/api/chat")
 async def chat(request: Request, chat_req: ChatRequest):
-    """
-    pushes a user message to the event bus.
-    """
-    command_bus: asyncio.Queue = getattr(request.app.state, "command_bus", None)
+    """Pushes a user message to the command bus."""
+    command_bus = getattr(request.app.state, "command_bus", None)
     if not command_bus:
         raise HTTPException(status_code=503, detail="Command bus not available.")
     
@@ -355,61 +276,48 @@ async def chat(request: Request, chat_req: ChatRequest):
         "session_id": chat_req.session_id or getattr(request.app.state, "current_session_id", None)
     }
     await command_bus.put(msg)
-    return {"status": "Message sent"}
+    return {"status": "ok"}
 
 @router.get("/api/system_logs")
 async def get_system_logs(request: Request, limit: int = 100):
-    """
-    Returns the last N lines from the system log file.
-    """
-    try:
-        from auric.core.config import load_config
-        config = load_config()
+    """Returns recent lines from the system log file."""
+    config = getattr(request.app.state, "config", None)
+    if not config:
+        return {"lines": []}
         
-        log_dir_str = config.agents.defaults.logging.log_dir
-        log_dir = Path(log_dir_str)
+    try:
+        log_dir = Path(config.agents.defaults.logging.log_dir)
         if not log_dir.is_absolute():
             log_dir = Path.cwd() / log_dir
             
         log_file = log_dir / "system.jsonl"
-        
         if not log_file.exists():
             return {"lines": []}
             
-        # Read last N lines (efficiently-ish)
-        # For simplicity, we read all and take last N, but for production use `deque` or file seeking.
-        # Given max size is 10MB, reading it all is okay-ish but not great.
-        # Let's use `deque` from collections
-        from collections import deque
         with open(log_file, "r", encoding="utf-8") as f:
             last_lines = deque(f, maxlen=limit)
             
-        # Parse JSON
         parsed_lines = []
-        import json
         for line in last_lines:
             try:
                 parsed_lines.append(json.loads(line))
-            except:
+            except json.JSONDecodeError:
                 parsed_lines.append({"raw": line})
                 
-        # Reverse to show newest first
         parsed_lines.reverse()
         return {"lines": parsed_lines}
-            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/llm_logs", response_model=LLMLogsResponse)
 async def get_llm_logs(request: Request, limit: int = 20, offset: int = 0):
-    """Returns paginated LLM logs."""
+    """Returns paginated LLM audit logs."""
     audit_logger = getattr(request.app.state, "audit_logger", None)
     if not audit_logger:
         return {"items": [], "total": 0}
     
     try:
         result = await audit_logger.get_llm_logs(limit, offset)
-        # items are SQLModel objects, convert to dicts for safety/compatibility
         return {
             "total": result["total"],
             "items": [item.model_dump() for item in result["items"]]
@@ -419,15 +327,9 @@ async def get_llm_logs(request: Request, limit: int = 20, offset: int = 0):
 
 @router.post("/api/heartbeat")
 async def trigger_heartbeat(request: Request):
-    """
-    Triggers a real system heartbeat (Vigil).
-    This checks active hours, reads HEARTBEAT.md, and wakes the agent if needed.
-    """
+    """Triggers an immediate system heartbeat pulse."""
     from auric.core.heartbeat import run_heartbeat_task
     
     command_bus = getattr(request.app.state, "command_bus", None)
     await run_heartbeat_task(command_bus=command_bus)
-    
-    return {"status": "Heartbeat triggered"}
-
-# We'll mount the static files in the main daemon setup.
+    return {"status": "ok"}

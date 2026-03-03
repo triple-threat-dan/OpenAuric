@@ -46,10 +46,9 @@ async def test_get_status(client, app):
     mock_msg.content = "hello"
     app.state.audit_logger.get_chat_history.return_value = [mock_msg]
     
-    with patch("auric.interface.server.routes.FocusManager") as MockFocusManager:
-        MockFocusManager.return_value.load.return_value = mock_focus
-        
-        response = client.get("/api/status")
+    app.state.focus_manager.load.return_value = mock_focus
+    
+    response = client.get("/api/status")
         
     assert response.status_code == 200
     data = response.json()

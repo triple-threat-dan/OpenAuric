@@ -72,22 +72,23 @@ def test_is_user_allowed_file(pairing_manager, temp_auric_root):
     assert pairing_manager.is_user_allowed("discord", 123) is True # Should handle int conversion to string
     assert pairing_manager.is_user_allowed("discord", "456") is False
 
-def test_create_request_new(pairing_manager, temp_auric_root, capsys):
+def test_create_request_new(pairing_manager, temp_auric_root, caplog):
+    import logging
     pact = "discord"
     user_id = "789"
     user_name = "test_user"
     
-    code = pairing_manager.create_request(pact, user_id, user_name)
-    assert len(code) == 6
-    assert isinstance(code, str)
-    
-    pending = pairing_manager.list_requests(pact)
-    assert code in pending
-    assert pending[code]["user_id"] == "789"
-    assert pending[code]["user_name"] == "test_user"
-    
-    captured = capsys.readouterr()
-    assert "[PAIRING] New Request from test_user (789). Code:" in captured.out
+    with caplog.at_level(logging.INFO):
+        code = pairing_manager.create_request(pact, user_id, user_name)
+        assert len(code) == 6
+        assert isinstance(code, str)
+        
+        pending = pairing_manager.list_requests(pact)
+        assert code in pending
+        assert pending[code]["user_id"] == "789"
+        assert pending[code]["user_name"] == "test_user"
+        
+        assert f"New Pairing Request: test_user (789) -> Code: {code}" in caplog.text
 
 def test_create_request_integer_id(pairing_manager):
     pact = "discord"
