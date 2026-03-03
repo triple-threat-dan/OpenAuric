@@ -76,3 +76,80 @@ def test_get_internal_tools_context():
     assert "execute_powershell" in context
     # Check if we have descriptions, not just names
     assert "Read the contents of a text file" in context
+
+from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime
+
+@pytest.mark.asyncio
+async def test_query_chat_history_no_audit_logger():
+    config = AuricConfig()
+    registry = ToolRegistry(config, audit_logger=None)
+    
+    result = await registry.query_chat_history("test")
+    assert result == "Error: Audit Logger is not available."
+
+@pytest.mark.asyncio
+async def test_query_chat_history_no_matching_session():
+    config = AuricConfig()
+    mock_audit = AsyncMock()
+    mock_audit.get_sessions.return_value = [
+        {"session_id": "1", "name": "General Chat"},
+        {"session_id": "2", "name": "Alice DM"}
+    ]
+    registry = ToolRegistry(config, audit_logger=mock_audit)
+    
+    result = await registry.query_chat_history("Bob")
+    assert "No session found matching 'Bob'" in result
+    assert "General Chat" in result
+    assert "Alice DM" in result
+
+@pytest.mark.asyncio
+async def test_query_chat_history_no_messages():
+    config = AuricConfig()
+    mock_audit = AsyncMock()
+    mock_audit.get_sessions.return_value = [{"session_id": "123", "name": "TargetUser"}]
+    mock_audit.get_chat_history.return_value = []
+    
+    registry = ToolRegistry(config, audit_logger=mock_audit)
+    
+    result = await registry.query_chat_history("targetuser")
+    assert result == "No messages found in session 'targetuser'."
+    mock_audit.get_chat_history.assert_called_once_with(limit=50, session_id="123")
+
+@pytest.mark.asyncio
+async def test_query_chat_history_success():
+    config = AuricConfig()
+    mock_audit = AsyncMock()
+    mock_audit.get_sessions.return_value = [{"session_id": "123", "name": "TargetUser"}]
+    
+    mock_msg1 = MagicMock()
+    mock_msg1.timestamp = datetime(2023, 1, 1, 12, 0)
+    mock_msg1.role = "USER"
+    mock_msg1.content = "Hello bot"
+    
+    mock_msg2 = MagicMock()
+    mock_msg2.timestamp = datetime(2023, 1, 1, 12, 1)
+    mock_msg2.role = "AGENT"
+    mock_msg2.content = "Hello user"
+    
+    mock_audit.get_chat_history.return_value = [mock_msg1, mock_msg2]
+    
+    registry = ToolRegistry(config, audit_logger=mock_audit)
+    
+    result = await registry.query_chat_history("targetuser", limit=10)
+    
+    assert "--- History for targetuser ---" in result
+    assert "[2023-01-01 12:00] User: Hello bot" in result
+    assert "[2023-01-01 12:01] Agent: Hello user" in result
+    mock_audit.get_chat_history.assert_called_once_with(limit=10, session_id="123")
+
+@pytest.mark.asyncio
+async def test_query_chat_history_exception():
+    config = AuricConfig()
+    mock_audit = AsyncMock()
+    mock_audit.get_sessions.side_effect = Exception("DB Connection Failed")
+    
+    registry = ToolRegistry(config, audit_logger=mock_audit)
+    
+    result = await registry.query_chat_history("test")
+    assert "Error querying chat history: DB Connection Failed" in result

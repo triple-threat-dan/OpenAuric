@@ -289,7 +289,9 @@ class RLMEngine:
                 return final_response
 
             # Append Assistant's thought/tool-call to history
-            messages.append(response.choices[0].message)
+            # Convert the Pydantic model to a dict to avoid serialization warnings on the next turn
+            msg_dict = response.choices[0].message.model_dump(exclude_unset=True) if hasattr(response.choices[0].message, "model_dump") else dict(response.choices[0].message)
+            messages.append(msg_dict)
 
             # Process Tool Calls
             for tool_call in tool_calls:

@@ -57,13 +57,13 @@ Current issues:
 - [x] stronger human-in-the-loop for critical tasks... have the agent show their task plan and ask for confirmation after it creates a plan in FOCUS.md, and proceed only if the user confirms the plan and tells them to proceed. If the user declines, the agent should cancel and reset the FOCUS.md file and not proceed with the task. (Implemented via AGENT.md MANDATORY TASK LIFECYCLE)
 - [ ] stronger human-in-the-loop for critical operations... such as deleting files, running commands, etc. The agent should ask for confirmation before performing any critical step.
 - [ ] discern when agent is being addressed vs. only referred to
-- [ ] add a "get_spells" tool to get   the list of spells available to the agent
+- [ ] add a "get_spells" tool to get the list of spells available to the agent
 - [ ] add a "get_pacts" tool to get the list of pacts available to the agent
 - [ ] sessions are still awkward to work with. We need the ability to manage sessions better and gracefully close them when the user is done with them.
 - [ ] add a way to backup the agent's state, memories, etc. 
 - [ ] add a way to restore the agent's state, memories, etc. 
 - [x] ability to restart the agent from the cli
-- [ ] add an update script or command
+- [x] add an update script or command
 - [ ] add Ollama support
 - [ ] only allow tool calling by sub_llm
 - [ ] have the agent react with an emoji via discord to acknowledge receipt of a message
@@ -76,7 +76,7 @@ Current issues:
 - [ ] tell the agent "if someone mentions something that isn't in your memories or confuses you, check your memories to see if it is there instead of assuming it is not there."
 - [ ] if a session sits too long, have the agent close it and summarize/consolidate memories (like a mini dream cycle)
 - [ ] have the agent interact with the HEARTBEAT.md file strictly through tools, not by reading the file directly, so we can abstract the heartbeat file from the agent and allow for other heartbeat mechanisms in the future.. Having the agent read the entire file and write to it all the time is brittle, inefficient, and prone to error and I'm tired of fixing bugs related to it. 
-- [ ] problem: the agent doesn't know about messages it just sent from a heartbeat, or from other sessions. So if a heartbeat triggers and the agent sends a message, it doesn't know that it sent it and will be oblivious if you ask it "did you just send that message?" or similar. We need to add a way for the agent to know about messages it has sent. We need a way to keep things in DMs private from other sessions and DMs, but still have the agent know about them. Perhaps all messages from all sessions go into a shared context object that the agent can access via python to query and see what has been said, but not via the LLM prompts? Along with this thought... 
-- [ ] rework session management so that when the bot sends a message to a user or channel, it sends it to that *session* as well so that it still sees the history of the conversation. 
+- [x] problem: the agent doesn't know about messages it just sent from a heartbeat, or from other sessions. So if a heartbeat triggers and the agent sends a message, it doesn't know that it sent it and will be oblivious if you ask it "did you just send that message?" or similar. We need to add a way for the agent to know about messages it has sent. We need a way to keep things in DMs private from other sessions and DMs, but still have the agent know about them. Perhaps all messages from all sessions go into a shared context object that the agent can access via python to query and see what has been said, but not via the LLM prompts? Along with this thought... 
+- [x] rework session management so that when the bot sends a message to a user or channel, it sends it to that *session* as well so that it still sees the history of the conversation. 
 - [x] when the agent receives back to back messages, it seems like they are only responding to the first one? Check that the messages are being queued up correctly, and that her responses to the previous one are added to the context before she starts generating her response to the next one, so she is aware of her previous response
 - [x] agent needs an execute_bash command for linux and macOS

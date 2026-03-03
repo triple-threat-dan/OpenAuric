@@ -167,9 +167,13 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     scheduler.start()
     logger.info("Scheduler started.")
 
+    # Initialize Session Router early for PactManager
+    from auric.core.session_router import SessionRouter
+    session_router = SessionRouter(AURIC_ROOT / "active_sessions.json")
+
     # 3.1 Setup Pact Manager (Omni-Channel)
     from auric.interface.pact_manager import PactManager
-    pact_manager = PactManager(config, audit_logger, command_bus, internal_bus)
+    pact_manager = PactManager(config, audit_logger, command_bus, internal_bus, session_router)
     await pact_manager.start()
     logger.info("PactManager started.")
 
@@ -226,8 +230,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     focus_path = AURIC_ROOT / "memories" / "FOCUS.md"
     focus_manager = FocusManager(focus_path) # Assumes file exists or handled by engine
     
-    tool_registry = ToolRegistry(config, librarian=librarian)
-    session_router = SessionRouter(AURIC_ROOT / "active_sessions.json")
+    tool_registry = ToolRegistry(config, librarian=librarian, audit_logger=audit_logger, session_router=session_router)
     
     # Inject into API state and add reload endpoint
     api_app.state.tool_registry = tool_registry

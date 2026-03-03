@@ -66,6 +66,23 @@ class SandboxManager:
         if not self.sandbox_dir.parent.exists():
             self.sandbox_dir.parent.mkdir(parents=True, exist_ok=True)
 
+        # Validate existing environment
+        if self.sandbox_dir.exists() and self.python_exe.exists():
+            # Check if the python executable actually works (handles cases where base install was moved/deleted)
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    str(self.python_exe), "--version",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode != 0:
+                    logger.warning("Sandbox Python is broken. Recreating environment...")
+                    shutil.rmtree(self.sandbox_dir, ignore_errors=True)
+            except Exception:
+                logger.warning("Failed to validate Sandbox Python. Recreating environment...")
+                shutil.rmtree(self.sandbox_dir, ignore_errors=True)
+
         if not self.sandbox_dir.exists():
             logger.info(f"Creating sandbox environment at {self.sandbox_dir}")
             try:

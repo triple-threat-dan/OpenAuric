@@ -27,9 +27,11 @@ class ToolRegistry:
     Acts as an MCP Client/Host, bundling internal tools and connecting to external ones.
     """
 
-    def __init__(self, config: AuricConfig, librarian=None):
+    def __init__(self, config: AuricConfig, librarian=None, audit_logger=None, session_router=None):
         self.config = config
         self.librarian = librarian
+        self.audit_logger = audit_logger
+        self.session_router = session_router
         self._internal_tools: Dict[str, Callable] = {}
         self._spells: Dict[str, Dict[str, Any]] = {} # name -> spell_data
         
@@ -39,11 +41,15 @@ class ToolRegistry:
         self._register_internal_tool(self.write_file)
         self._register_internal_tool(self.append_file)
         self._register_internal_tool(self.execute_powershell)
+        self._register_internal_tool(self.execute_bash)
         self._register_internal_tool(self.run_python)
         
         # Register Memory Tools
         if self.librarian:
             self._register_internal_tool(self.memory_search)
+            
+        if self.audit_logger:
+            self._register_internal_tool(self.query_chat_history)
         
         # Initialize Sandbox
         self.sandbox = SandboxManager(config)
@@ -129,12 +135,21 @@ class ToolRegistry:
     def get_internal_tools_context(self) -> str:
         """
         Generates a summary of available internal tools for the system prompt.
+        Filters platform-specific tools.
         """
         if not self._internal_tools:
             return ""
 
         lines = ["## Internal Standard Tools", ""]
+        is_windows = os.name == 'nt'
+        
         for name, func in self._internal_tools.items():
+            # Platform filtering for context
+            if name == "execute_powershell" and not is_windows:
+                continue
+            if name == "execute_bash" and is_windows:
+                continue
+                
             doc = inspect.getdoc(func) or "No description available."
             # Only take the first paragraph of the docstring for brevity in text
             summary = doc.split("\n\n")[0].strip()
@@ -317,6 +332,7 @@ class ToolRegistry:
     def execute_powershell(command: str) -> str:
         """
         Executes a PowerShell command securely on the host system.
+        Only available on Windows.
         
         Args:
             command: The PowerShell command to execute.
@@ -324,10 +340,10 @@ class ToolRegistry:
         Returns:
             The stdout output or error message.
         """
-        try:
-            # Normalize path separators for Windows (PowerShell doesn't always like mixed / and \)
-            # command = command.replace("/", "\\")  <-- REMOVED: Breaks URLs! PowerShell handles / fine in strings.
+        if os.name != 'nt':
+            return "Error: execute_powershell is only available on Windows systems."
             
+        try:
             # We use powershell -Command "..."
             cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
             
@@ -344,6 +360,35 @@ class ToolRegistry:
                 
         except Exception as e:
             return f"Error executing PowerShell: {str(e)}"
+
+    @staticmethod
+    def execute_bash(command: str) -> str:
+        """
+        Executes a Bash command securely on the host system.
+        Only available on Linux and macOS.
+        
+        Args:
+            command: The Bash command to execute.
+            
+        Returns:
+            The stdout output or error message.
+        """
+        if os.name == 'nt':
+            return "Error: execute_bash is only available on Linux and macOS systems."
+            
+        try:
+            # We use /bin/bash -c "..."
+            cmd = ["/bin/bash", "-c", command]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return result.stdout.strip()
+            else:
+                return f"Error (Exit Code {result.returncode}):\n{result.stderr}\n{result.stdout}"
+                
+        except Exception as e:
+            return f"Error executing Bash: {str(e)}"
 
     async def run_python(self, code: str) -> str:
         """
@@ -387,6 +432,56 @@ class ToolRegistry:
             output.append(f"--- from {source} (dist: {distance:.4f}) ---\n{content}\n")
             
         return "\n".join(output)
+
+    async def query_chat_history(self, target: str, limit: int = 50) -> str:
+        """
+        Queries the chat history of a specific past session based on the target name (e.g. @Username, #channel-name).
+        
+        Args:
+            target: The name of the user or channel to retrieve history for (e.g., '@Alice', '#general', 'Session 1234').
+            limit: The maximum number of recent messages to retrieve (default 50).
+            
+        Returns:
+            A formatted string of the chat history, or an error if not found.
+        """
+        if not self.audit_logger:
+            return "Error: Audit Logger is not available."
+            
+        try:
+            # Get all sessions to find a match
+            sessions = await self.audit_logger.get_sessions()
+            
+            # Find closest matching session by name
+            matched_session_id = None
+            target_lower = target.lower()
+            
+            for session_info in sessions:
+                name = session_info.get("name", "").lower()
+                if target_lower in name:
+                    matched_session_id = session_info.get("session_id")
+                    break
+                    
+            if not matched_session_id:
+                return f"No session found matching '{target}'. Available sessions: " + ", ".join([s.get("name", "Unknown") for s in sessions[:10]])
+                
+            # Fetch history
+            history = await self.audit_logger.get_chat_history(limit=limit, session_id=matched_session_id)
+            
+            if not history:
+                return f"No messages found in session '{target}'."
+                
+            formatted = [f"--- History for {target} ---"]
+            for msg in history:
+                # Format: [YYYY-MM-DD HH:MM] ROLE: Content
+                ts = msg.timestamp.strftime("%Y-%m-%d %H:%M")
+                role = msg.role.capitalize()
+                formatted.append(f"[{ts}] {role}: {msg.content}")
+                
+            return "\n".join(formatted)
+            
+        except Exception as e:
+            logger.error(f"Failed to query chat history for {target}: {e}")
+            return f"Error querying chat history: {e}"
 
     # ==========================================================================
     # Registry Operations
@@ -505,7 +600,14 @@ class ToolRegistry:
         schemas = []
         
         # Internal
+        is_windows = os.name == 'nt'
         for name, func in self._internal_tools.items():
+            # Platform filtering for schema
+            if name == "execute_powershell" and not is_windows:
+                continue
+            if name == "execute_bash" and is_windows:
+                continue
+                
             func_schema = self._generate_function_schema(func)
             schemas.append({
                 "type": "function",

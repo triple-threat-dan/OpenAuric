@@ -15,11 +15,12 @@ class PactManager:
     Omni-Channel Manager that unifies Telegram, Discord, and other inputs.
     Handles HITL (Human-in-the-Loop) Resume logic.
     """
-    def __init__(self, config: AuricConfig, audit_logger: AuditLogger, command_bus: asyncio.Queue, event_bus: asyncio.Queue):
+    def __init__(self, config: AuricConfig, audit_logger: AuditLogger, command_bus: asyncio.Queue, event_bus: asyncio.Queue, session_router: Any = None):
         self.config = config
         self.audit = audit_logger
         self.command_bus = command_bus
         self.event_bus = event_bus
+        self.session_router = session_router
         self.adapters: Dict[str, BasePact] = {}
 
     async def start(self) -> None:
@@ -119,32 +120,6 @@ class PactManager:
     # Tool Abstraction Methods
     # ==========================
 
-    def get_all_tools_definitions(self) -> str:
-        """
-        Aggregates tool definitions from all enabled pacts.
-        """
-        definitions = []
-        for name, adapter in self.adapters.items():
-            defs = adapter.get_tools_definition()
-            if defs:
-                definitions.append(defs)
-        return "\n\n".join(definitions)
-
-    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        """
-         routes execution to the correct adapter.
-        """
-        # Linear search for now, could optimize with a map
-        for name, adapter in self.adapters.items():
-            if tool_name in adapter.get_tool_names():
-                try:
-                    return await adapter.execute_tool(tool_name, args)
-                except Exception as e:
-                    logger.error(f"Error executing tool {tool_name} on pact {name}: {e}")
-                    raise
-        
-        raise ValueError(f"Tool {tool_name} not found in any active pact.")
-
     async def trigger_typing(self, platform: str, target_id: str) -> None:
         """
         Triggers typing indicator on the specified platform.
@@ -199,7 +174,25 @@ class PactManager:
         for name, adapter in self.adapters.items():
             if tool_name in adapter.get_tool_names():
                 logger.info(f"Executing tool {tool_name} via {name} pact")
-                return await adapter.execute_tool(tool_name, args)
+                result = await adapter.execute_tool(tool_name, args)
+                
+                # Intercept outbound messaging tools to log them into the target session's history
+                # This ensures heartbeats/scheduled tasks that send messages are visible 
+                # to the LLM the next time the target interacts with it.
+                if tool_name in ("discord_send_dm", "discord_send_channel_message"):
+                    target_id = args.get("user_id") or args.get("channel_id")
+                    content = args.get("content")
+                    
+                    if target_id and content and self.session_router and self.audit:
+                        # Reconstruct context key based on adapter name (e.g. discord:12345)
+                        context_key = f"{name}:{target_id}"
+                        target_session_id = self.session_router.get_active_session_id(context_key)
+                        
+                        if target_session_id:
+                             logger.info(f"Injected outbound message tool call {tool_name} into session {target_session_id}")
+                             await self.audit.log_chat(role="AGENT", content=content, session_id=target_session_id)
+                             
+                return result
         
         raise ValueError(f"Tool {tool_name} not found in any active pact.")
 
