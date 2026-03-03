@@ -80,3 +80,4 @@ Current issues:
 - [x] rework session management so that when the bot sends a message to a user or channel, it sends it to that *session* as well so that it still sees the history of the conversation. 
 - [x] when the agent receives back to back messages, it seems like they are only responding to the first one? Check that the messages are being queued up correctly, and that her responses to the previous one are added to the context before she starts generating her response to the next one, so she is aware of her previous response
 - [x] agent needs an execute_bash command for linux and macOS
+- [ ] when heartbeats trigger, they aren't pulling in the latest version of the HEARTBEAT.md file from disk, and/or the agent doesn't seem to think that some of the tasks apply for the current time even though they obviously do.

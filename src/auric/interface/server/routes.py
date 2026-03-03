@@ -135,7 +135,7 @@ async def get_sessions(request: Request):
         active_sids = set()
         
         if session_router:
-            active_sids = session_router.get_all_active_session_ids()
+            active_sids = set(session_router.get_all_active_session_ids())
         
         # Also include the current web session as active
         if current_web_sid:
