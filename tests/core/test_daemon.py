@@ -159,11 +159,12 @@ async def test_run_daemon_heartbeat_intervals(mock_dependencies, mock_api_app, m
 @pytest.mark.asyncio
 async def test_run_daemon_missing_static_dir(mock_dependencies, mock_api_app):
     """Test creating static dir when missing."""
-    with patch("auric.core.daemon.Path.exists", return_value=False), \
-         patch("auric.core.daemon.Path.mkdir") as mock_mkdir, \
+    mock_static = MagicMock()
+    mock_static.exists.return_value = False
+    with patch("auric.core.daemon.STATIC_PATH", mock_static), \
          patch("auric.core.daemon.asyncio.Event.wait", side_effect=asyncio.CancelledError):
          await daemon.run_daemon(None, mock_api_app)
-         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+         mock_static.mkdir.assert_called_once_with(parents=True, exist_ok=True)
 
 @pytest.mark.asyncio
 async def test_run_daemon_no_last_session(mock_dependencies, mock_api_app):
