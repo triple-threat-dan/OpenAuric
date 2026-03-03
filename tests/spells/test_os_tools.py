@@ -34,15 +34,16 @@ def test_os_aware_tool_schema():
         assert "execute_powershell" not in tool_names
         assert "execute_bash" in tool_names
 
-def test_tool_execution_restriction():
+@pytest.mark.asyncio
+async def test_tool_execution_restriction():
     config = AuricConfig()
     registry = ToolRegistry(config)
     
     if os.name == 'nt':
         # On Windows, bash should fail
-        result = registry.execute_bash("ls")
-        assert "Error: execute_bash is only available on Linux and macOS systems." in result
+        result = await registry.execute_bash("ls")
+        assert "Error: execute_bash is Linux/macOS only." in result
     else:
         # On Unix, powershell should fail
-        result = registry.execute_powershell("Get-Process")
-        assert "Error: execute_powershell is only available on Windows systems." in result
+        result = await registry.execute_powershell("Get-Process")
+        assert "Error: execute_powershell is Windows-only." in result
