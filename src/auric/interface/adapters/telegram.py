@@ -1,78 +1,68 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Any
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.constants import ChatAction
 from telegram.error import TelegramError
+from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from auric.interface.adapters.base import BasePact, PactEvent
 
 logger = logging.getLogger("auric.pact.telegram")
 
 class TelegramPact(BasePact):
+    """Telegram adapter for the Auric Pact system."""
+    
     def __init__(self, token: str):
         super().__init__()
         self.token = token
-        self.application: Optional[Application] = None
+        self.application: Application | None = None
         self._started = False
-        self._typing_tasks: Dict[str, asyncio.Task] = {} # chat_id -> task
+        self._typing_tasks: dict[str, asyncio.Task] = {}
 
     async def start(self) -> None:
-        """
-        Initialize and start the Telegram bot application.
-        """
+        """Initialize and start the Telegram bot."""
         if self._started:
             return
 
         logger.info("Initializing Telegram Pact...")
-        
-        # Build the application
-        builder = Application.builder().token(self.token)
-        self.application = builder.build()
+        self.application = Application.builder().token(self.token).build()
 
-        # Register handlers
-        # We want to capture text messages. 
-        # filters.TEXT & ~filters.COMMAND captures non-command text.
-        # We might want commands too, but usually an agent just listens to chat. 
-        # Let's catch everything that is text.
-        text_handler = MessageHandler(filters.TEXT, self._telegram_handle_message)
-        self.application.add_handler(text_handler)
+        # Register message handler for text content
+        self.application.add_handler(MessageHandler(filters.TEXT, self._telegram_handle_message))
 
-        # Initialize and Start
         await self.application.initialize()
         await self.application.start()
         
-        # Start Polling (non-blocking way for existing loop)
-        # We use start_polling() but we need to manage the updater's lifecycle carefully 
-        # if we are in a shared loop. 
-        # application.updater.start_polling() is asynchronous but returns a coroutine?
-        # Actually in v20+, start_polling() starts the background task.
-        
-        await self.application.updater.start_polling(drop_pending_updates=False) # type: ignore
+        # Start background polling
+        if self.application.updater:
+            await self.application.updater.start_polling(drop_pending_updates=False)
         
         self._started = True
         logger.info("Telegram Pact started.")
 
     async def stop(self) -> None:
-        """
-        Stop the Telegram bot.
-        """
+        """Stop the Telegram bot and cleanup resources."""
         if not self._started or not self.application:
             return
 
         logger.info("Stopping Telegram Pact...")
-        await self.application.updater.stop() # type: ignore
+        if self.application.updater:
+            await self.application.updater.stop()
         await self.application.stop()
         await self.application.shutdown()
+        
+        # Cleanup typing tasks
+        for task in self._typing_tasks.values():
+            task.cancel()
+        self._typing_tasks.clear()
+        
         self._started = False
         logger.info("Telegram Pact stopped.")
 
     async def send_message(self, target_id: str, content: str) -> None:
-        """
-        Send a message to a chat_id.
-        """
-        # Stop typing indicator first
+        """Send a message to a specific chat ID."""
         await self.stop_typing(target_id)
         
         if not self._started or not self.application:
@@ -85,58 +75,44 @@ class TelegramPact(BasePact):
             logger.error(f"Failed to send Telegram message to {target_id}: {e}")
 
     async def trigger_typing(self, target_id: str) -> None:
-        """
-        Trigger a typing indicator on the target chat.
-        """
+        """Trigger a persistent typing indicator on the target chat."""
         if not self._started or not self.application:
             return
 
-        # If already typing for this target, don't spawn another task
         if target_id in self._typing_tasks and not self._typing_tasks[target_id].done():
             return
 
         async def _typing_loop(chat_id: str):
-            from telegram.constants import ChatAction
             try:
                 while True:
-                    # Telegram typing action expires after ~5 seconds
                     await self.application.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-                    await asyncio.sleep(4)
+                    await asyncio.sleep(4) # Action expires after ~5s
             except asyncio.CancelledError:
                 pass
             except Exception as e:
                 logger.error(f"Error in Telegram typing loop for {chat_id}: {e}")
 
-        # Spawn loop
         self._typing_tasks[target_id] = asyncio.create_task(_typing_loop(target_id))
 
     async def stop_typing(self, target_id: str) -> None:
-        """
-        Stop the persistent typing indicator for a target.
-        """
-        if target_id in self._typing_tasks:
-            task = self._typing_tasks[target_id]
+        """Stop the persistent typing indicator for a target."""
+        if task := self._typing_tasks.pop(target_id, None):
             if not task.done():
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
                     pass
-            del self._typing_tasks[target_id]
 
-    async def _telegram_handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """
-        Internal handler for Telegram updates.
-        """
+    async def _telegram_handle_message(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+        """Internal handler for incoming Telegram messages."""
         if not update.message or not update.message.text:
             return
 
-        # Normalize to PactEvent
         user = update.message.from_user
-        
         event = PactEvent(
             platform="telegram",
-            sender_id=str(update.message.chat_id), # Use chat_id as the primary identifier for replies
+            sender_id=str(update.message.chat_id),
             content=update.message.text,
             timestamp=update.message.date,
             metadata={
@@ -149,5 +125,4 @@ class TelegramPact(BasePact):
         if update.message.reply_to_message:
             event.reply_to_id = str(update.message.reply_to_message.message_id)
 
-        # Emit to PactManager
         await self._emit(event)

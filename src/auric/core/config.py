@@ -5,13 +5,13 @@ This module handles loading configuration from disk (.auric/auric.json),
 enforcing security permissions, and providing access to secrets.
 """
 
-import os
-import sys
-import stat
-import logging
 import json
+import logging
+import os
+import stat
+import sys
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 import json5
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,34 +19,20 @@ from pydantic_settings import BaseSettings
 
 logger = logging.getLogger("auric.config")
 
-# ==============================================================================
-# Constants & Root Discovery
-# ==============================================================================
-
 def find_auric_root() -> Path:
     """
-    Locates the .auric directory by searching the current directory and its parents.
-    Defaults to CWD/.auric if not found elsewhere.
+    Locates the .auric directory. 
+    Prioritizes the AURIC_ROOT environment variable, otherwise defaults 
+    to the current directory's .auric folder.
     """
-    cwd = Path.cwd()
-    root = cwd / ".auric"
-    if root.exists():
-        return root
-    
-    # Git-style upward search
-    for parent in cwd.parents:
-        candidate = parent / ".auric"
-        if candidate.exists():
-            return candidate
-            
-    # Default to CWD if no existing .auric found (e.g. first run)
-    return cwd / ".auric"
+    if env_root := os.getenv("AURIC_ROOT"):
+        return Path(env_root)
+    return Path.cwd() / ".auric"
 
-AURIC_CONFIG_FILE = "auric.json"
 AURIC_ROOT = find_auric_root()
+AURIC_CONFIG_FILE = "auric.json"
 AURIC_WORKSPACE_DIR = AURIC_ROOT / "workspace"
 AURIC_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-
 
 # ==============================================================================
 # Pydantic Models
@@ -85,7 +71,7 @@ class AgentsConfig(BaseModel):
     max_recursion: int = 2
     max_cost: float = 1.0
     max_turns: int = 15
-    dream_time: str = "04:00" # 24h format
+    dream_time: str = "04:00"
     enable_dream_stories: bool = True
     
     models: Dict[str, ModelConfig] = Field(default_factory=lambda: {
@@ -149,7 +135,6 @@ class AuricConfig(BaseSettings):
 
     model_config = ConfigDict(strict=True, populate_by_name=True)
 
-
 # ==============================================================================
 # Configuration Loader
 # ==============================================================================
@@ -168,11 +153,7 @@ class ConfigLoader:
     def _ensure_permissions(cls, path: Path) -> None:
         """Enforce 0600 permissions (Owner Read/Write only)."""
         if not path.parent.exists():
-            try:
-                path.parent.mkdir(parents=True, mode=0o700)
-            except Exception as e:
-                logger.error(f"Failed to create config directory {path.parent}: {e}")
-                raise
+            path.parent.mkdir(parents=True, mode=0o700)
 
         if not path.exists():
             return
@@ -180,11 +161,10 @@ class ConfigLoader:
         try:
             current_mode = stat.S_IMODE(path.stat().st_mode)
             # strictly 0o600 (User RW) or 0o400 (User R)
-            if (current_mode & 0o077) != 0:
-                if sys.platform != "win32":
-                    logger.warning(f"Insecure config file permissions: {oct(current_mode)}. Enforcing 0600.")
-                    os.chmod(path, 0o600)
-                    logger.info(f"Fixed permissions for {path} to 0600.")
+            if (current_mode & 0o077) != 0 and sys.platform != "win32":
+                logger.warning(f"Insecure config file permissions: {oct(current_mode)}. Enforcing 0600.")
+                os.chmod(path, 0o600)
+                logger.info(f"Fixed permissions for {path} to 0600.")
         except Exception as e:
             logger.warning(f"Could not enforce permissions on {path}: {e}")
 
@@ -213,28 +193,26 @@ class ConfigLoader:
         """Saves configuration to disk with 0600 permissions."""
         config_path = cls.get_config_path()
         try:
-            if not config_path.parent.exists():
-                 config_path.parent.mkdir(parents=True, mode=0o700)
+            config_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
 
             data = config.model_dump(by_alias=True, mode='json')
             content = json.dumps(data, indent=2)
 
-            # Secure write
+            # Secure write for new files
             if not config_path.exists():
                 fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
                 with os.fdopen(fd, 'w') as f:
                     f.write(content)
             else:
-                 try:
-                     os.chmod(config_path, 0o600)
-                 except Exception:
-                     pass
-                 with open(config_path, "w", encoding="utf-8") as f:
-                     f.write(content)
+                 if sys.platform != "win32":
+                     try:
+                         os.chmod(config_path, 0o600)
+                     except Exception:
+                         pass
+                 config_path.write_text(content, encoding="utf-8")
         except Exception as e:
             logger.error(f"Failed to save configuration to {config_path}: {e}")
             raise
-
 
 # ==============================================================================
 # Secrets Manager
@@ -245,11 +223,13 @@ class SecretsManager:
 
     def __init__(self, config: AuricConfig):
         self.config = config
+        # Cache the dumped data for faster dot-notation lookups
+        self._data = config.model_dump(by_alias=True)
 
     def get_secret(self, key_name: str) -> Optional[str]:
         """Retrieves a secret by dot-notation key (e.g. 'tools.openai.api_key')."""
         keys = key_name.split('.')
-        value = self.config.model_dump(by_alias=True)
+        value = self._data
         try:
             for k in keys:
                 value = value[k]
@@ -257,10 +237,8 @@ class SecretsManager:
             if isinstance(value, (str, int, float, bool)):
                  return str(value)
             return None
-        except (KeyError, TypeError) as e:
-            logger.debug(f"Secret {key_name} not found in config: {e}")
+        except (KeyError, TypeError):
             return None
-
 
 # ==============================================================================
 # Facade / Singleton Access
@@ -279,7 +257,7 @@ def load_config() -> AuricConfig:
 
 def get_secrets_manager() -> SecretsManager:
     """Global secrets manager accessor."""
-    global _secrets, _params
+    global _secrets
     if _secrets is None:
         load_config()
     if _secrets is None:

@@ -1,83 +1,83 @@
-import logging
+"""
+System-wide structured logging for OpenAuric.
+
+Handles JSONL logging with rotation, ensuring all system events are
+captured in a machine-readable format for audit and debugging.
+"""
+
 import json
-import os
-from logging.handlers import RotatingFileHandler
+import logging
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from auric.core.config import AuricConfig, AURIC_ROOT
+from auric.core.config import AuricConfig
 
 class SystemLogger:
     """
     Handles system-wide JSONL logging with rotation.
-    Singleton-ish access pattern via class method.
+    Ensures structured events are captured consistently across the engine.
     """
-    _instance = None
+    _instance: Optional['SystemLogger'] = None
+    _LEVEL_MAP = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL
+    }
 
     def __init__(self, config: AuricConfig):
         self.config = config
         self.logger = logging.getLogger("auric.system")
         self.logger.setLevel(logging.INFO)
-        self.logger.propagate = False # Do not propagate to root logger (console)
+        self.logger.propagate = False
 
-        # Ensure we don't add multiple handlers if re-initialized
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
 
-        if not config.agents.defaults.logging.enabled:
+        log_config = config.agents.defaults.logging
+        if not log_config.enabled:
             self.logger.addHandler(logging.NullHandler())
             return
 
-        # Setup File Handler
-        log_dir_str = config.agents.defaults.logging.log_dir
-        # If relative, make it relative to AURIC_ROOT for consistency, or CWD?
-        # Config says ".auric/logs", so likely relative to CWD.
-        # But let's verify if user meant relative to .auric root or workspace.
-        # Default is ".auric/logs".
-        
-        # We will treat it as relative to CWD.
-        log_dir = Path(log_dir_str)
+        log_dir = Path(log_config.log_dir)
         if not log_dir.is_absolute():
             log_dir = Path.cwd() / log_dir
             
-        if not log_dir.exists():
-            log_dir.mkdir(parents=True, exist_ok=True)
-            
+        log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "system.jsonl"
         
-        max_bytes = config.agents.defaults.logging.max_size_mb * 1024 * 1024
-        backup_count = config.agents.defaults.logging.backup_count
+        max_bytes = log_config.max_size_mb * 1024 * 1024
         
         handler = RotatingFileHandler(
             log_file, 
             maxBytes=max_bytes, 
-            backupCount=backup_count, 
+            backupCount=log_config.backup_count, 
             encoding='utf-8'
         )
-        
-        formatter = JSONLFormatter()
-        handler.setFormatter(formatter)
+        handler.setFormatter(JSONLFormatter())
         self.logger.addHandler(handler)
 
     @classmethod
     def get_instance(cls, config: Optional[AuricConfig] = None) -> 'SystemLogger':
+        """Singleton accessor."""
         if cls._instance is None:
             if config is None:
-                # Late import to verify config is loaded or raise error
                 from auric.core.config import load_config
                 config = load_config()
             cls._instance = cls(config)
         return cls._instance
 
-    def log(self, event_type: str, data: Dict[str, Any], session_id: Optional[str] = None, level: str = "INFO"):
+    def log(self, event_type: str, data: Dict[str, Any], session_id: Optional[str] = None, level: str = "INFO") -> None:
         """
-        Logs a structured event.
+        Logs a structured event in JSONL format.
         
         Args:
-            event_type: A distinct category for the event (e.g., 'TOOL_CALL', 'LLM_RESPONSE').
-            data: Key-value data payload.
-            session_id: The active session ID, if any.
+            event_type: Category for the event (e.g., 'TOOL_CALL', 'LLM_RESPONSE').
+            data: Payload data.
+            session_id: The active session ID.
             level: Log level (INFO, WARNING, ERROR).
         """
         if not self.config.agents.defaults.logging.enabled:
@@ -91,33 +91,26 @@ class SystemLogger:
             "data": data
         }
         
-        # We log strictly the message as JSON. 
-        # The Formatter will ensure it's written correctly, but here we pass the dict 
-        # so the formatter can handle it, or we dump it here.
-        # Standard logging expects a string message.
-        # Let's dump it here to ensure it's valid JSON line.
-        # Actually, let's use the `extra` dict or just pass the dict as msg and have formatter handle it?
-        # The simplest reliability is to dump here.
-        
-        # Check level
-        log_method = getattr(self.logger, level.lower(), self.logger.info)
-        log_method(payload)
+        log_level = self._LEVEL_MAP.get(level.upper(), logging.INFO)
+        self.logger.log(log_level, payload)
 
 
 class JSONLFormatter(logging.Formatter):
-    """
-    Format standard logging records as JSONL.
-    Expects `msg` to be a dict or string.
-    """
-    def format(self, record):
+    """Formats standard and structured logging records as JSONL."""
+    
+    def format(self, record: logging.LogRecord) -> str:
         if isinstance(record.msg, dict):
-            # It's already our structured payload
-            return json.dumps(record.msg, default=str)
-        else:
-            # It's a legacy string log or something else
-            return json.dumps({
-                "timestamp": datetime.fromtimestamp(record.created).isoformat(),
-                "event": "SYSTEM_MSG",
-                "level": record.levelname,
-                "data": {"message": str(record.msg)}
-            }, default=str)
+            # Enforce timestamp from construction time if constructed by SystemLogger.log
+            # or from record creation time if injected elsewhere.
+            payload = record.msg
+            if "timestamp" not in payload:
+                payload["timestamp"] = datetime.fromtimestamp(record.created).isoformat()
+            return json.dumps(payload, default=str)
+        
+        # Fallback for standard string logs
+        return json.dumps({
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "event": "SYSTEM_MSG",
+            "level": record.levelname,
+            "data": {"message": str(record.msg)}
+        }, default=str)

@@ -48,6 +48,7 @@ class TaskContext(BaseModel):
     relevant_snippets: List[str] = Field(default_factory=list)
     depth: int = 0
     parent_instruction: Optional[str] = None
+    source: Optional[str] = "USER"
 
 # ==============================================================================
 # Recursion Guard
@@ -100,9 +101,6 @@ class RLMEngine:
         # Cache logger instance
         self.system_logger = SystemLogger.get_instance()
 
-        self._action_history: List[str] = []
-        self._max_history = 10 
-
     async def check_heartbeat_necessity(self, user_query: str) -> bool:
         """
         Performs a 'Lean Check' to see if the full agent is needed.
@@ -136,15 +134,10 @@ class RLMEngine:
             "1. **Ignore Structure**: Ignore HTML comments (`<!-- -->`), and headers (`#`).\n"
             "2. **Check for Actionable Tasks**: Look for instructions (e.g., '- Check database', '- Every morning...').\n"
             "3. **STRICT TIME CHECK**: Compare the task's time condition against Current Time.\n"
-            "   - If task says '9am' and it is 00:30 -> NO.\n"
-            "   - If task says 'Every evening' and it is Morning -> NO.\n"
-            "   - If task says 'at 5pm' and it is 5:00pm -> YES.\n"
-            "4. **Output Format**: \n"
-            "   - Scan ALL tasks.\n"
-            "   - **STOP IMMEDIATELY** if you find a task that is actionable NOW.\n"
-            "   - Output: 'Task: [Brief Text] -> [Analysis] -> VERDICT: YES'\n"
-            "   - If no tasks are actionable after scanning all, output 'VERDICT: NO'."
-            "5. **Output Format**: ONLY output the VERDICT. No other text (e.g. 'VERDICT: YES' or 'VERDICT: NO').\n"
+            "4. **OUTPUT FORMAT**: You MUST open a `<thinking>` block to evaluate the time for each task. You cannot do time math in your head.\n"
+            "   - If a task's time matches the Current Time, mark it as ACTIONABLE in your thinking block.\n"
+            "   - After closing the `</thinking>` block, if any task was actionable, output EXACTLY AND ONLY: VERDICT: YES\n"
+            "   - If no tasks were actionable, output EXACTLY AND ONLY: VERDICT: NO\n"
             f"Current Time: {now.astimezone().strftime('%Y-%m-%d %I:%M %p %Z')} ({period})\n\n"
         )
 
@@ -177,7 +170,7 @@ class RLMEngine:
             # Fail safe: if check fails, assume we should wake up (better to be noisy than miss a task)
             return True 
 
-    async def think(self, user_query: str, depth: int = 0, session_id: Optional[str] = None, model_tier: str = "smart_model") -> str:
+    async def think(self, user_query: str, depth: int = 0, session_id: Optional[str] = None, model_tier: str = "smart_model", source: str = "USER") -> str:
         """
         The main recursive loop.
         1. Checks safeguards (Depth, Cost).
@@ -205,8 +198,13 @@ class RLMEngine:
         task_context = TaskContext(
             query=user_query,
             relevant_snippets=snippets,
-            depth=depth
+            depth=depth,
+            source=source
         )
+
+        # Loop Detection History (Local to this task execution)
+        action_history = []
+        max_history = 10
 
         # 3. Assemble System Prompt
         system_prompt = self._assemble_system_prompt(task_context)
@@ -291,7 +289,9 @@ class RLMEngine:
                 return final_response
 
             # Append Assistant's thought/tool-call to history
-            messages.append(response.choices[0].message)
+            # Convert the Pydantic model to a dict to avoid serialization warnings on the next turn
+            msg_dict = response.choices[0].message.model_dump(exclude_unset=True) if hasattr(response.choices[0].message, "model_dump") else dict(response.choices[0].message)
+            messages.append(msg_dict)
 
             # Process Tool Calls
             for tool_call in tool_calls:
@@ -312,7 +312,7 @@ class RLMEngine:
 
                 
                 # Check for loops
-                self._check_loop(fn_name, args)
+                self._check_loop(fn_name, args, action_history, max_history)
                 
                 # Log tool execution to CLI/Bus via callback
                 if hasattr(self, "log_callback") and self.log_callback:
@@ -334,7 +334,7 @@ class RLMEngine:
                     instruction = args.get("instruction")
                     logger.info(f"Spawning Sub-Agent: {instruction[:50]}...")
                     # RECURSION HAPPENS HERE
-                    sub_result = await self.think(instruction, depth=depth + 1)
+                    sub_result = await self.think(instruction, depth=depth + 1, source=source)
                     result_content = f"Sub-Agent Result: {sub_result}"
                 
                 else:
@@ -477,8 +477,9 @@ class RLMEngine:
                 parts.append(f"## User Context\n{user_text}")
 
         # 3. The Time & Environment
-        parts.append(f"## Current Time\n{datetime.now().isoformat()} EST")
-        parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: When using `execute_powershell`, standard PowerShell syntax applies.")
+        now = datetime.now().astimezone()
+        parts.append(f"## Current Time\n{now.isoformat()} {now.tzname()}")
+        parts.append(f"## Environment\nOS: {platform.system()} {platform.release()}\nCWD: {os.getcwd()}\nNote: Use `execute_powershell` (standard PowerShell syntax) on Windows, or `execute_bash` (standard Bash syntax) on Linux/macOS.")
 
         # 4 Memory & Abilities
         if memory_text := self._read_section(AURIC_ROOT / "memories" / "MEMORY.md"):
@@ -488,7 +489,7 @@ class RLMEngine:
         # 5. Tool Usage Instructions
         tools_intro = [
             "## Tool Usage Instructions",
-            "You have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, or run_python), OR create the spell to do it using the spell_crafter spell.**",
+            "You have access to tools provided via native function calling. **CRITICAL: You may ONLY use the tools provided to you. Do NOT invent, guess, or hallucinate tool names. If a tool you want does not exist, use the tools you have to accomplish the task instead (e.g., use write_file, execute_powershell, execute_bash, or run_python), OR create the spell to do it using the spell_crafter spell.**",
             ""
         ]
 
@@ -513,7 +514,10 @@ class RLMEngine:
             parts.extend(task_context.relevant_snippets)
 
         # 7. The Focus (Working Memory)
-        if focus_text := self._read_section(AURIC_ROOT / "memories" / "FOCUS.md"):
+        if task_context.source == "HEARTBEAT":
+            # Clean Focus for Heartbeats: Do NOT inject the main FOCUS.md
+            parts.append("## Current Focus (Temporary)\nYou are currently performing a **Heartbeat System Check**. You have a clean slate for this task. Focus exclusively on evaluating and performing pending items from `HEARTBEAT.md` if any are actionable. Once complete, this temporary focus will be discarded.")
+        elif focus_text := self._read_section(AURIC_ROOT / "memories" / "FOCUS.md"):
             parts.append(focus_text)
         
         return "\n\n".join(parts)
@@ -553,21 +557,21 @@ class RLMEngine:
         self.session_cost += cost
         logger.debug(f"Turn Cost: ${cost:.6f} | Total Session Cost: ${self.session_cost:.4f}")
 
-    def _check_loop(self, tool_name: str, args: Dict[str, Any]):
+    def _check_loop(self, tool_name: str, args: Dict[str, Any], action_history: List[str], max_history: int):
         """
-        Detects repetitive tool calls.
+        Detects repetitive tool calls using the provided history.
         """
         # Create a determinstic hash of the call
         call_str = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
         call_hash = hashlib.md5(call_str.encode()).hexdigest()
 
-        self._action_history.append(call_hash)
-        if len(self._action_history) > self._max_history:
-            self._action_history.pop(0)
+        action_history.append(call_hash)
+        if len(action_history) > max_history:
+            action_history.pop(0)
 
         # Check for 3 repeats in a row
-        if len(self._action_history) >= 3:
-            if self._action_history[-1] == self._action_history[-2] == self._action_history[-3]:
+        if len(action_history) >= 3:
+            if action_history[-1] == action_history[-2] == action_history[-3]:
                 raise RepetitiveStressError(f"Detected infinite loop for tool {tool_name} with args {args}")
 
     def _read_section(self, path: Path) -> Optional[str]:

@@ -1,13 +1,15 @@
+"""
+Base abstractions for platform adapters (Pacts) in OpenAuric.
+"""
+
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Callable, Optional, Dict, Any, Awaitable
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 class PactEvent(BaseModel):
-    """
-    Normalized message event from any platform (Telegram, Discord, CLI).
-    """
+    """Normalized message event from any platform (Telegram, Discord, etc.)."""
     platform: str
     sender_id: str
     content: str
@@ -16,83 +18,55 @@ class PactEvent(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     
 class BasePact(ABC):
-    """
-    Abstract base class for platform adapters.
-    """
+    """Abstract base class for all platform adapters."""
     
     def __init__(self):
         self._message_handler: Optional[Callable[[PactEvent], Awaitable[None]]] = None
 
     @abstractmethod
     async def start(self) -> None:
-        """
-        Start the adapter (e.g., start polling or connecting to websocket).
-        """
+        """Initialize and start the adapter."""
         pass
 
     @abstractmethod
     async def stop(self) -> None:
-        """
-        Stop the adapter.
-        """
+        """Gracefully shut down the adapter."""
         pass
         
     @abstractmethod
     async def send_message(self, target_id: str, content: str) -> None:
-        """
-        Send an outbound message to a specific user/channel.
-        """
+        """Send an outbound message to a specific user or channel."""
         pass
 
     async def trigger_typing(self, target_id: str) -> None:
-        """
-        Trigger a typing indicator on the target channel/user.
-        Default implementation is a no-op.
-        """
+        """Trigger a typing indicator on the target channel/user."""
         pass
 
     async def stop_typing(self, target_id: str) -> None:
-        """
-        Stop the typing indicator on the target channel/user.
-        Default implementation is a no-op.
-        """
+        """Stop the typing indicator on the target channel/user."""
         pass
 
     def on_message(self, callback: Callable[[PactEvent], Awaitable[None]]) -> None:
-        """
-        Register the callback function to handle incoming messages.
-        """
+        """Register a callback to handle incoming messages."""
         self._message_handler = callback
 
     async def _emit(self, event: PactEvent) -> None:
-        """
-        Internal helper to trigger the registered callback.
-        """
+        """Internal helper to trigger the registered message callback."""
         if self._message_handler:
             await self._message_handler(event)
 
     def get_tools_definition(self) -> str:
-        """
-        Returns the markdown explanation of tools this pact provides.
-        Optional override for pacts without tools.
-        """
+        """Return a markdown description of the tools provided by this pact."""
         return ""
 
-    def get_tool_names(self) -> list[str]:
-        """
-        Returns a list of tool names this pact handles (for routing).
-        e.g. ['discord_send_dm', 'discord_send_channel_message']
-        """
+    def get_tool_names(self) -> List[str]:
+        """Return a list of tool names handled by this pact."""
         return []
 
-    def get_tools_schema(self) -> list[Dict[str, Any]]:
-        """
-        Returns a list of JSON schemas for the tools provided by this pact.
-        """
+    def get_tools_schema(self) -> List[Dict[str, Any]]:
+        """Return a list of JSON schemas for the tools provided by this pact."""
         return []
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        """
-        Executes a tool if this pact owns it.
-        """
+        """Execute a tool provided by this pact."""
         raise NotImplementedError(f"Tool {tool_name} not implemented in {self.__class__.__name__}")
