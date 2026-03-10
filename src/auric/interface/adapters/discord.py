@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -277,6 +278,18 @@ class DiscordPact(BasePact):
 
     @staticmethod
     def _chunk_message(content: str, max_length: int = 2000) -> List[str]:
+        # Fix "naked" emojis (e.g. a:name:id or name:id) that are missing brackets
+        # Matches patterns like a:cathi:1478099851047862436 or cathi:1478099851047862436
+        # only if they aren't already inside brackets.
+        def fix_emojis(text: str) -> str:
+            # Matches a:name:id or :name:id only if NOT already wrapped in < >
+            # We look for the start of the pattern.
+            # We use a pattern that ensures we match the FULL emoji string.
+            pattern = r"(?<!<)(?<!<a)(?<!:)(a?:\w+:\d+)(?!>)"
+            return re.sub(pattern, r"<\1>", text)
+
+        content = fix_emojis(content)
+
         if len(content) <= max_length:
             return [content]
         
@@ -377,7 +390,6 @@ class DiscordPact(BasePact):
                     pass
 
     def get_tools_definition(self) -> str:
-        from pathlib import Path
         tools_path = Path(__file__).parent / "discord_tools.md"
         return tools_path.read_text(encoding="utf-8") if tools_path.exists() else ""
 

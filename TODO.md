@@ -39,7 +39,7 @@ Current issues:
 - [ ] add support for specialist agents/models for the rlm to call (coding specialists, RP/chat specialists, etc.)
 - [x] sessions still aren't closing when I am trying to force them to. We need to review how sessions are routed, especially from DMs to general chats and vice-versa. 
 - [x] logs... we need to log *everything*. We need an everything log that logs every single tool call, chat, response, llm call, etc. in JSONL format.
-- [ ] need to add a config/settings page on the frontend ui to allow users to configure their pacts, tokens, etc. Basically a UI for the json config.
+- [x] need to add a config/settings page on the frontend ui to allow users to configure their pacts, tokens, etc. Basically a UI for the json config.
 - [ ] We need to add a way to search the logs and memories, perhaps ui pages 
 - [ ] Add per-file unit tests for all the modules, get test coverage above 80%
 - [ ] Look into changing the name in LLMGateway to something more specific so it shows up in stats on OpenRouter    
@@ -56,7 +56,7 @@ Current issues:
 - [x] fix issue: agent can't see its spells it just crafted or internal tools 
 - [x] stronger human-in-the-loop for critical tasks... have the agent show their task plan and ask for confirmation after it creates a plan in FOCUS.md, and proceed only if the user confirms the plan and tells them to proceed. If the user declines, the agent should cancel and reset the FOCUS.md file and not proceed with the task. (Implemented via AGENT.md MANDATORY TASK LIFECYCLE)
 - [ ] stronger human-in-the-loop for critical operations... such as deleting files, running commands, etc. The agent should ask for confirmation before performing any critical step.
-- [ ] discern when agent is being addressed vs. only referred to
+- [?] discern when agent is being addressed vs. only referred to
 - [ ] add a "get_spells" tool to get the list of spells available to the agent
 - [ ] add a "get_pacts" tool to get the list of pacts available to the agent
 - [ ] sessions are still awkward to work with. We need the ability to manage sessions better and gracefully close them when the user is done with them.

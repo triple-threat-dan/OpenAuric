@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import secrets
+import signal
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -60,6 +61,62 @@ def parse_interval(interval_str: str) -> Dict[str, int]:
     
     logger.warning(f"Invalid heartbeat interval '{interval_str}', defaulting to 30m")
     return {"minutes": 30}
+
+async def shutdown_daemon(
+    audit_logger: AuditLogger, 
+    session_router: SessionRouter, 
+    gateway: Any, 
+    config: Any,
+    pact_manager: Any,
+    scheduler: AsyncIOScheduler,
+    tasks_to_cancel: list[asyncio.Task]
+) -> None:
+    """Gracefully shuts down the daemon, summarizing and closing all sessions."""
+    logger.info("Graceful shutdown initiated...")
+    
+    # 1. Close and Summarize Sessions
+    active_sessions = session_router.list_active_contexts()
+    if active_sessions:
+        logger.info(f"Summarizing and closing {len(active_sessions)} active sessions...")
+        hb_model = config.agents.models.get("heartbeat_model")
+        model = hb_model.model if hb_model else config.agents.models.get("fast_model", {}).get("model", "gpt-4o-mini")
+        
+        for context, session_id in active_sessions.items():
+            try:
+                await audit_logger.summarize_session(session_id, gateway, model=model)
+                session_router.close_session(context)
+            except Exception as e:
+                logger.error(f"Failed to summarize session {session_id}: {e}")
+    
+    # 2. Stop Pact Manager (Discord/Telegram)
+    try:
+        await pact_manager.stop()
+    except Exception as e:
+        logger.error(f"PactManager stop failed: {e}")
+
+    # 3. Stop Scheduler
+    try:
+        scheduler.shutdown()
+    except Exception:
+        pass
+
+    # 4. Cancel Background Tasks
+    for task in tasks_to_cancel:
+        task.cancel()
+    
+    if tasks_to_cancel:
+        try:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
+
+    # 5. Close Audit Database
+    try:
+        await audit_logger.close()
+    except Exception:
+        pass
+    
+    logger.info("Daemon cleanup complete.")
 
 async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     """
@@ -118,6 +175,9 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     api_app.mount("/", StaticFiles(directory=str(STATIC_PATH), html=True, check_dir=False), name="static")
 
     # Setup Infrastructure
+    shutdown_event = asyncio.Event()
+    api_app.state.shutdown_event = shutdown_event
+    
     scheduler = AsyncIOScheduler()
     audit_logger = AuditLogger()
     await audit_logger.init_db()
@@ -178,7 +238,6 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
 
     # Brain Components Initialization
     from auric.brain.llm_gateway import LLMGateway
-    from auric.brain.rlm import RLMEngine
     from auric.memory.focus_manager import FocusManager
     from auric.memory.librarian import GrimoireLibrarian
     from auric.spells.tool_registry import ToolRegistry
@@ -213,6 +272,7 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
              "source": "BRAIN"
          })
 
+    from auric.brain.rlm import RLMEngine
     rlm_engine = RLMEngine(
         config=config,
         gateway=gateway,
@@ -427,8 +487,19 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     brain_task = asyncio.create_task(brain_loop())
     dispatcher_task = asyncio.create_task(dispatcher_loop())
     
-    shutdown_event = asyncio.Event()
-    
+    def handle_sigterm():
+        logger.info("Signal received. Triggering shutdown.")
+        shutdown_event.set()
+
+    # Register signal handlers
+    try:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, handle_sigterm)
+    except NotImplementedError:
+        # signal.add_signal_handler is not implemented on Windows
+        pass
+
     try:
         logger.info("AuricDaemon Running (Ctrl+C to stop)...")
         await shutdown_event.wait()
@@ -437,14 +508,13 @@ async def run_daemon(tui_app: Optional[App], api_app: FastAPI) -> None:
     except Exception as e:
         logger.critical(f"Daemon crashed: {e}")
     finally:
-        logger.info("Shutting down AuricDaemon...")
-        await pact_manager.stop()
-        scheduler.shutdown()
-        api_task.cancel()
-        dispatcher_task.cancel()
-        brain_task.cancel()
-        try:
-            await asyncio.gather(api_task, dispatcher_task, brain_task, return_exceptions=True)
-        except asyncio.CancelledError:
-            pass
+        await shutdown_daemon(
+            audit_logger=audit_logger,
+            session_router=session_router,
+            gateway=gateway,
+            config=config,
+            pact_manager=pact_manager,
+            scheduler=scheduler,
+            tasks_to_cancel=[api_task, dispatcher_task, brain_task]
+        )
         logger.info("Shutdown complete.")

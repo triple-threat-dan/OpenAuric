@@ -724,7 +724,7 @@ async def test_stop_typing_cancelled(mock_discord_pact):
     
 @pytest.mark.asyncio
 async def test_get_tools_definition_no_file(mock_discord_pact):
-    with patch("pathlib.Path.exists", return_value=False):
+    with patch("auric.interface.adapters.discord.Path.exists", return_value=False):
         assert mock_discord_pact.get_tools_definition() == ""
 
 @pytest.mark.asyncio

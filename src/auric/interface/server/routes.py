@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from auric.core.config import AuricConfig, ConfigLoader
 from auric.interface.server.auth import verify_token
 
 logger = logging.getLogger("auric.routes")
@@ -333,3 +334,45 @@ async def trigger_heartbeat(request: Request):
     command_bus = getattr(request.app.state, "command_bus", None)
     await run_heartbeat_task(command_bus=command_bus)
     return {"status": "ok"}
+
+@router.post("/api/shutdown")
+async def shutdown_daemon(request: Request):
+    """Triggers a graceful shutdown of the daemon."""
+    shutdown_event = getattr(request.app.state, "shutdown_event", None)
+    if shutdown_event:
+        shutdown_event.set()
+        return {"status": "ok", "message": "Shutdown initiated."}
+    return {"status": "error", "message": "Shutdown event not found."}
+
+@router.get("/api/settings")
+async def get_settings(request: Request):
+    """Returns the current raw configuration settings."""
+    config: AuricConfig = getattr(request.app.state, "config", None)
+    if not config:
+        raise HTTPException(status_code=500, detail="Configuration not loaded.")
+    # Return dump using aliases to match the auric.json keys exactly
+    return config.model_dump(by_alias=True)
+
+@router.post("/api/settings")
+async def update_settings(request: Request):
+    """Updates configuration settings and saves to disk."""
+    try:
+        body = await request.json()
+        
+        # Ensure that sandbox allowed_imports is set to an empty list if not provided
+        if "sandbox" in body and "allowed_imports" not in body["sandbox"]:
+             body["sandbox"]["allowed_imports"] = []
+
+        # Validate by instantiating the model
+        new_config = AuricConfig(**body)
+        
+        # Update app state
+        request.app.state.config = new_config
+        
+        # Save to disk
+        ConfigLoader.save(new_config)
+        
+        return {"status": "ok", "message": "Settings updated successfully."}
+    except Exception as e:
+        logger.error(f"Failed to update settings: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid configuration: {str(e)}")

@@ -158,14 +158,28 @@ def start():
 @app.command()
 def stop(force: bool = typer.Option(False, "--force", "-f")):
     """Stop the Auric Daemon."""
-    import psutil
+    import psutil, time
+    
+    # 1. Try API Shutdown first
+    status, _ = _api_request("/api/shutdown", method="POST")
+    if status == 200:
+        console.print("[green]Graceful shutdown initiated via API...[/green]")
+        # Wait for PID file to disappear
+        for _ in range(10):
+            if not PID_FILE.exists():
+                console.print("[green]Daemon stopped gracefully.[/green]")
+                return
+            time.sleep(0.5)
+
+    # 2. Fallback to process termination if API failed or PID still exists
     if not PID_FILE.exists(): return
     try:
         pid = int(PID_FILE.read_text().strip())
         proc = psutil.Process(pid)
+        console.print(f"[yellow]Triggering termination for PID {pid}...[/yellow]")
         proc.terminate()
         proc.wait(timeout=5)
-        console.print("[green]Daemon stopped.[/green]")
+        console.print("[green]Daemon stopped (terminated).[/green]")
     except (psutil.NoSuchProcess, psutil.TimeoutExpired, ValueError):
         if force:
             proc.kill()
@@ -379,7 +393,17 @@ def sessions_list():
 @sessions_app.command("closeall")
 def sessions_closeall():
     from auric.core.session_router import SessionRouter
-    if typer.confirm("Close all?"):
-        console.print(f"Closed {len(SessionRouter().close_all_sessions())} sessions.")
+    if not typer.confirm("Close all?"): return
+
+    # 1. Try API first (Graceful + Summarized)
+    status, data = _api_request("/api/sessions/closeall", method="POST")
+    if status == 200:
+        console.print(f"[green]Closed {data.get('closed_count', 0)} sessions and summarized {data.get('summarized', 0)} sessions via Daemon.[/green]")
+        return
+
+    # 2. Offline Fallback (No Summarization)
+    console.print("[yellow]Daemon unreachable. Closing sessions offline (no summarization)...[/yellow]")
+    closed = SessionRouter().close_all_sessions()
+    console.print(f"[green]Closed {len(closed)} sessions.[/green]")
 
 if __name__ == "__main__": app()
