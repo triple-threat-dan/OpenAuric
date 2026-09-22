@@ -10,8 +10,7 @@ from auric.spells.tool_registry import ToolRegistry
 
 @pytest.fixture
 def mock_config():
-    config = Mock(spec=AuricConfig)
-    config.agents = Mock(spec=AgentsConfig)
+    config = AuricConfig()
     config.agents.max_recursion = 3
     config.agents.max_cost = 1.0
     config.agents.max_turns = 5
@@ -61,12 +60,13 @@ class TestRecursionGuard:
 
 class TestRLMEngineInitialization:
     def test_init(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(
-            config=mock_config,
-            gateway=mock_gateway,
-            librarian=mock_librarian,
-            focus_manager=mock_focus_manager
-        )
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(
+                config=mock_config,
+                gateway=mock_gateway,
+                librarian=mock_librarian,
+                focus_manager=mock_focus_manager
+            )
         assert engine.config == mock_config
         assert engine.gateway == mock_gateway
         assert engine.recursion_guard.max_depth == 3
@@ -75,24 +75,26 @@ class TestRLMEngineInitialization:
 class TestRLMEngineSafeguards:
     @pytest.mark.asyncio
     async def test_recursion_limit_in_think(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(
-            config=mock_config,
-            gateway=mock_gateway,
-            librarian=mock_librarian,
-            focus_manager=mock_focus_manager
-        )
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(
+                config=mock_config,
+                gateway=mock_gateway,
+                librarian=mock_librarian,
+                focus_manager=mock_focus_manager
+            )
         # Should raise immediately if depth is too high
         with pytest.raises(RecursionLimitExceeded):
             await engine.think("test", depth=4)
 
     @pytest.mark.asyncio
     async def test_cost_limit_exceeded(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(
-            config=mock_config,
-            gateway=mock_gateway,
-            librarian=mock_librarian,
-            focus_manager=mock_focus_manager
-        )
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(
+                config=mock_config,
+                gateway=mock_gateway,
+                librarian=mock_librarian,
+                focus_manager=mock_focus_manager
+            )
         engine.session_cost = 1.1  # Limit is 1.0
         with pytest.raises(CostLimitExceeded):
             await engine.think("test", depth=0)
@@ -110,7 +112,8 @@ class TestRLMEngineLogic:
 
     @pytest.mark.asyncio
     async def test_think_loop_basic(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         
         # Mock LLM response
         mock_response = self._create_mock_resp(content="Hello world")
@@ -124,7 +127,8 @@ class TestRLMEngineLogic:
 
     @pytest.mark.asyncio
     async def test_think_loop_with_tool(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager, mock_tool_registry):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager, tool_registry=mock_tool_registry)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager, tool_registry=mock_tool_registry)
         
         # Setup Tool Registry
         mock_tool_registry._internal_tools = {"test_tool": Mock()}
@@ -152,7 +156,8 @@ class TestRLMEngineLogic:
 
     @pytest.mark.asyncio
     async def test_think_recurse(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         
         # Turn 1: Spawn Sub Agent
         tool_call = Mock(id="call_1")
@@ -176,7 +181,8 @@ class TestRLMEngineLogic:
 
     @pytest.mark.asyncio
     async def test_infinite_loop_detection(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager, mock_tool_registry):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager, tool_registry=mock_tool_registry)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager, tool_registry=mock_tool_registry)
         mock_tool_registry._internal_tools = {"repeat_tool": Mock()}
         mock_tool_registry.execute_tool.return_value = "Same result"
 
@@ -194,7 +200,8 @@ class TestRLMEngineLogic:
 
     @pytest.mark.asyncio
     async def test_unknown_tool(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         
         # Tool Call to unknown tool
         tool_call = Mock(id="call_1")
@@ -223,14 +230,16 @@ class TestRLMEngineLogic:
 class TestHeartbeatOptimization:
     @pytest.mark.asyncio
     async def test_heartbeat_empty_input(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         result = await engine.check_heartbeat_necessity("   ")
         assert result is False
         mock_gateway.chat_completion.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_heartbeat_return_true(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         
         # Setup response
         mock_response = Mock()
@@ -254,7 +263,8 @@ class TestHeartbeatOptimization:
 
     @pytest.mark.asyncio
     async def test_heartbeat_return_false(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         
         mock_response = Mock()
         mock_response.choices = [Mock(message=Mock(content="Scanned all. No actionable items.\nVERDICT: NO"))]
@@ -267,7 +277,8 @@ class TestHeartbeatOptimization:
     @pytest.mark.asyncio
     async def test_heartbeat_future_task_no(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
         """Test that a task scheduled for the future returns NO."""
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         
         # Model reasons that task is for later
         mock_response = Mock()
@@ -280,7 +291,8 @@ class TestHeartbeatOptimization:
 
     @pytest.mark.asyncio
     async def test_heartbeat_exception_default_true(self, mock_config, mock_gateway, mock_librarian, mock_focus_manager):
-        engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
+        with patch("auric.core.config.load_config", return_value=mock_config):
+            engine = RLMEngine(mock_config, mock_gateway, mock_librarian, mock_focus_manager)
         mock_gateway.chat_completion.side_effect = Exception("API Error")
         
         result = await engine.check_heartbeat_necessity("Fail Open")

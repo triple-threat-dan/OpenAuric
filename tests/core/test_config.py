@@ -46,24 +46,11 @@ def test_find_auric_root_in_cwd(mock_cwd):
     (mock_cwd / ".auric").mkdir()
     assert config.find_auric_root() == mock_cwd / ".auric"
 
-def test_find_auric_root_in_parent(mock_cwd):
-    """Test find_auric_root when .auric is in a parent directory."""
-    parent_dir = mock_cwd / "parent"
-    child_dir = parent_dir / "child"
-    child_dir.mkdir(parents=True)
-    
-    (parent_dir / ".auric").mkdir()
-    
-    with patch("auric.core.config.Path.cwd", return_value=child_dir):
-        assert config.find_auric_root() == parent_dir / ".auric"
-
 def test_find_auric_root_not_found(mock_cwd):
-    """Test find_auric_root when .auric is nowhere to be found."""
-    # We must mock Path.exists to always return False, otherwise it might find
-    # a real .auric in a parent directory (e.g. ~/.auric) since the temp path
-    # is usually inside the user's home directory.
-    with patch("auric.core.config.Path.exists", return_value=False):
-        assert config.find_auric_root() == mock_cwd / ".auric"
+    """Test find_auric_root when .auric does not exist."""
+    # Since find_auric_root is now strictly local, it returns CWD / .auric
+    # regardless of whether the directory exists or not.
+    assert config.find_auric_root() == mock_cwd / ".auric"
 
 # ==============================================================================
 # Tests for ConfigLoader

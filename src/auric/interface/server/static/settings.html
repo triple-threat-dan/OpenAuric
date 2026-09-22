@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings | OpenAuric</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .settings-layout {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 10px;
+            box-sizing: border-box;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            flex-shrink: 0;
+        }
+
+        .settings-container {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        .settings-sidebar {
+            width: 250px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+        }
+
+        .settings-sidebar h2 {
+            color: var(--accent-color);
+            font-size: 1.1rem;
+            margin-top: 0;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .section-nav {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid transparent;
+            color: var(--muted-text);
+            padding: 10px 15px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            text-transform: uppercase;
+        }
+
+        .section-nav:hover {
+            background: rgba(10, 189, 199, 0.1);
+            color: var(--accent-color);
+            border-left: 2px solid var(--accent-color);
+        }
+
+        .section-nav.active {
+            background: rgba(10, 189, 199, 0.15);
+            color: var(--accent-color);
+            border-left: 4px solid var(--accent-color);
+            font-weight: bold;
+        }
+
+        .settings-content {
+            flex: 1;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .settings-section {
+            display: none;
+        }
+
+        .settings-section.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .settings-section h2 {
+            color: var(--accent-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 2px solid var(--border-color);
+        }
+
+        .form-group:hover {
+            border-left-color: var(--accent-color);
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--accent-secondary);
+            font-weight: bold;
+            font-size: 0.95rem;
+        }
+
+        .form-group .description {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--muted-text);
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        .form-control {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 10px;
+            font-family: var(--font-mono);
+            border-radius: 4px;
+            box-sizing: border-box;
+            transition: all 0.2s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 5px rgba(10, 189, 199, 0.3);
+        }
+
+        input[type="checkbox"].form-control {
+            width: auto;
+            transform: scale(1.2);
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .checkbox-label span {
+            color: var(--text-color);
+        }
+
+        /* Object nested grouping */
+        .nested-group {
+            margin-left: 15px;
+            padding-left: 15px;
+            border-left: 1px dashed var(--border-color);
+            margin-top: 15px;
+        }
+
+        .nested-group h3 {
+            color: var(--text-color);
+            font-size: 1rem;
+            margin-top: 0;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .nested-group h3::before {
+            content: "└";
+            color: var(--muted-text);
+            margin-right: 8px;
+            opacity: 0.5;
+        }
+
+        .actions-bar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .btn {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 10px 20px;
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 4px;
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background: rgba(10, 189, 199, 0.1);
+            color: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-color);
+            color: #000;
+            box-shadow: 0 0 15px rgba(10, 189, 199, 0.5);
+        }
+
+        .btn:hover:not(.btn-primary) {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #fff;
+        }
+
+        .back-btn {
+            text-decoration: none;
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 8px 15px;
+            border-radius: 4px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: var(--accent-color);
+            color: #000;
+            box-shadow: 0 0 10px rgba(10, 189, 199, 0.4);
+        }
+
+        /* Array input styling */
+        .array-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .array-item {
+            display: flex;
+            gap: 10px;
+        }
+
+        .array-item input {
+            flex: 1;
+        }
+
+        .btn-remove-array {
+            background: rgba(250, 22, 125, 0.1);
+            color: var(--error-color);
+            border: 1px solid var(--error-color);
+            padding: 0 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-remove-array:hover {
+            background: var(--error-color);
+            color: #000;
+        }
+
+        .btn-add-array {
+            align-self: flex-start;
+            background: rgba(10, 189, 199, 0.1);
+            color: var(--accent-color);
+            border: 1px dashed var(--accent-color);
+            padding: 5px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+
+        .btn-add-array:hover {
+            background: rgba(10, 189, 199, 0.2);
+        }
+
+        /* Status Toast */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: var(--panel-bg);
+            color: #fff;
+            text-align: center;
+            border-radius: 4px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            border: 1px solid var(--border-color);
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+
+        #toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+
+        #toast.success {
+            border-color: #4caf50;
+            color: #4caf50;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
+        }
+
+        #toast.error {
+            border-color: var(--error-color);
+            color: var(--error-color);
+            box-shadow: 0 0 15px rgba(250, 22, 125, 0.2);
+        }
+
+        @keyframes fadein {
+            from {
+                bottom: 0;
+                opacity: 0;
+            }
+
+            to {
+                bottom: 30px;
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeout {
+            from {
+                bottom: 30px;
+                opacity: 1;
+            }
+
+            to {
+                bottom: 0;
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="settings-layout">
+        <div class="header-bar">
+            <div class="logo-area" style="display: flex; align-items: center; gap: 15px;">
+                <img src="ALISS_AURIC.png" alt="Logo" style="height: 40px; width: auto;">
+                <div>
+                    <h1 style="margin: 0; font-size: 1.5rem;">SYSTEM<span class="highlight">SETTINGS</span></h1>
+                </div>
+            </div>
+            <a href="/" class="back-btn">&larr; Back to Terminal</a>
+        </div>
+
+        <div class="settings-container">
+            <!-- Sidebar Navigation -->
+            <div class="settings-sidebar">
+                <h2>Categories</h2>
+                <div class="section-nav active" onclick="switchSection('general')">General</div>
+                <div class="section-nav" onclick="switchSection('agents')">Agents</div>
+                <div class="section-nav" onclick="switchSection('models')">Models</div>
+                <div class="section-nav" onclick="switchSection('gateway')">Gateway</div>
+                <div class="section-nav" onclick="switchSection('pacts')">Pacts (Comms)</div>
+                <div class="section-nav" onclick="switchSection('keys')">API Keys</div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="settings-content" id="form-container">
+                <div style="text-align: center; color: var(--muted-text); margin-top: 50px;">
+                    <span class="thinking-dots">...</span> Loading configuration...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal (Reused) -->
+    <div id="login-modal" class="modal"
+        style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.85); justify-content: center; align-items: center; backdrop-filter: blur(5px);">
+        <div class="modal-content"
+            style="background-color: var(--panel-bg); border: 1px solid var(--accent-color); padding: 40px; border-radius: 8px; width: 100%; max-width: 400px; text-align: center;">
+            <h2 style="color: var(--accent-color); margin-top: 0;">🔐 Auth Required</h2>
+            <input type="password" id="token-input" placeholder="Paste Token Here..." autocomplete="off"
+                style="width: 100%; padding: 10px; margin: 20px 0; background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); color: var(--text-color); text-align: center;">
+            <button id="login-btn" class="btn btn-primary" style="width: 100%;">Unlock Access</button>
+            <p id="login-error" style="color: var(--error-color); margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="toast">Settings saved successfully.</div>
+
+    <script>
+        let currentConfig = null;
+        let authToken = localStorage.getItem('auric_token');
+
+        // --- Auth Logic ---
+        function showLogin() {
+            document.getElementById('login-modal').style.display = 'flex';
+        }
+        function hideLogin() {
+            document.getElementById('login-modal').style.display = 'none';
+        }
+
+        async function attemptLogin() {
+            const token = document.getElementById('token-input').value.trim();
+            if (!token) return;
+            try {
+                const response = await fetch('/api/status', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (response.ok) {
+                    authToken = token;
+                    localStorage.setItem('auric_token', token);
+                    hideLogin();
+                    loadConfig();
+                } else {
+                    document.getElementById('login-error').textContent = "Invalid Token";
+                }
+            } catch (e) {
+                document.getElementById('login-error').textContent = "Connection Error";
+            }
+        }
+        document.getElementById('login-btn').addEventListener('click', attemptLogin);
+        document.getElementById('token-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') attemptLogin();
+        });
+
+        async function fetchAuth(url, options = {}) {
+            if (!authToken) { showLogin(); throw new Error("No Token"); }
+            const headers = options.headers || {};
+            headers['Authorization'] = `Bearer ${authToken}`;
+            options.headers = headers;
+            const response = await fetch(url, options);
+            if (response.status === 401) {
+                localStorage.removeItem('auric_token');
+                authToken = null;
+                showLogin();
+                throw new Error("Unauthorized");
+            }
+            return response;
+        }
+
+        // --- Type Utilities ---
+        // Dynamically creates elements based on value type
+        function createInputElement(path, value) {
+            if (typeof value === 'boolean') {
+                return `<label class="checkbox-label"><input type="checkbox" class="form-control" data-path="${path}" ${value ? 'checked' : ''}> <span>Enabled</span></label>`;
+            } else if (typeof value === 'number') {
+                const step = Number.isInteger(value) ? '1' : '0.1';
+                return `<input type="number" step="${step}" class="form-control" data-path="${path}" value="${value}">`;
+            } else if (Array.isArray(value)) {
+                // Array handling
+                let itemsHtml = value.map((v, i) => `
+                    <div class="array-item">
+                        <input type="text" class="form-control array-val" data-path="${path}[${i}]" value="${v}">
+                        <button type="button" class="btn-remove-array" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                `).join('');
+                return `
+                    <div class="array-container" data-array-path="${path}">
+                        ${itemsHtml}
+                        <button type="button" class="btn-add-array" onclick="addArrayItem(this, '${path}')">+ Add Item</button>
+                    </div>
+                `;
+            } else {
+                // String or null
+                return `<input type="text" class="form-control" data-path="${path}" value="${value || ''}" ${value === null ? 'placeholder="null"' : ''}>`;
+            }
+        }
+
+        function addArrayItem(btn, path) {
+            const container = btn.parentElement;
+            const idx = container.querySelectorAll('.array-item').length;
+            const item = document.createElement('div');
+            item.className = 'array-item';
+            item.innerHTML = `
+                <input type="text" class="form-control array-val" data-path="${path}[${idx}]" value="">
+                <button type="button" class="btn-remove-array" onclick="this.parentElement.remove()">×</button>
+            `;
+            container.insertBefore(item, btn);
+        }
+
+        // --- Render UI ---
+        function renderForm(config) {
+            const container = document.getElementById('form-container');
+
+            // We define "sections" logically mapping to the config structure
+            const sections = {
+                'general': `
+                    <div id="general" class="settings-section active">
+                        <h2>General Settings</h2>
+                        <div class="form-group">
+                            <label>Debug Mode</label>
+                            <span class="description">Enabling debug mode increases verbosity in system logs.</span>
+                            ${createInputElement('debug', config.debug)}
+                        </div>
+                    </div>
+                `,
+                'agents': `
+                    <div id="agents" class="settings-section">
+                        <h2>Agent Settings</h2>
+                        <div class="form-group">
+                            <label>Agent Name</label>
+                            ${createInputElement('agents.name', config.agents.name)}
+                        </div>
+                        <div class="form-group">
+                            <label>Local Mode</label>
+                            <span class="description">Are we running entirely local models?</span>
+                            ${createInputElement('agents.is_local', config.agents.is_local)}
+                        </div>
+                        <div class="form-group">
+                            <label>Max Recursion</label>
+                            <span class="description">Maximum depth the agent can recursively plan/execute.</span>
+                            ${createInputElement('agents.max_recursion', config.agents.max_recursion)}
+                        </div>
+                        <div class="form-group">
+                            <label>Max Cost ($)</label>
+                            ${createInputElement('agents.max_cost', config.agents.max_cost)}
+                        </div>
+                        <div class="form-group">
+                            <label>Max Turns</label>
+                            ${createInputElement('agents.max_turns', config.agents.max_turns)}
+                        </div>
+                        
+                        <div class="nested-group">
+                            <h3>Heartbeat Defaults</h3>
+                            <div class="form-group">
+                                <label>Enabled</label>
+                                ${createInputElement('agents.defaults.heartbeat.enabled', config.agents.defaults.heartbeat.enabled)}
+                            </div>
+                            <div class="form-group">
+                                <label>Interval</label>
+                                ${createInputElement('agents.defaults.heartbeat.interval', config.agents.defaults.heartbeat.interval)}
+                            </div>
+                            <div class="form-group">
+                                <label>Active Hours</label>
+                                ${createInputElement('agents.defaults.heartbeat.activeHours', config.agents.defaults.heartbeat.activeHours || config.agents.defaults.heartbeat.active_hours)}
+                            </div>
+                            <div class="form-group">
+                                <label>Target</label>
+                                ${createInputElement('agents.defaults.heartbeat.target', config.agents.defaults.heartbeat.target)}
+                            </div>
+                        </div>
+                        
+                        <div class="nested-group">
+                            <h3>Logging Defaults</h3>
+                            <div class="form-group">
+                                <label>Enabled</label>
+                                ${createInputElement('agents.defaults.logging.enabled', config.agents.defaults.logging.enabled)}
+                            </div>
+                            <div class="form-group">
+                                <label>Log Directory</label>
+                                ${createInputElement('agents.defaults.logging.log_dir', config.agents.defaults.logging.log_dir)}
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'models': `
+                    <div id="models" class="settings-section">
+                        <h2>Model Configurations</h2>
+                        ${Object.keys(config.agents.models).map(modelKey => `
+                            <div class="nested-group">
+                                <h3>${modelKey.replace('_', ' ').toUpperCase()}</h3>
+                                <div class="form-group">
+                                    <label>Enabled</label>
+                                    ${createInputElement(`agents.models.${modelKey}.enabled`, config.agents.models[modelKey].enabled)}
+                                </div>
+                                <div class="form-group">
+                                    <label>Provider</label>
+                                    ${createInputElement(`agents.models.${modelKey}.provider`, config.agents.models[modelKey].provider)}
+                                </div>
+                                <div class="form-group">
+                                    <label>Model</label>
+                                    ${createInputElement(`agents.models.${modelKey}.model`, config.agents.models[modelKey].model)}
+                                </div>
+                            </div>
+                        `).join('')}
+                        
+                        <div class="nested-group" style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                            <h3>EMBEDDINGS</h3>
+                            <div class="form-group">
+                                <label>Provider</label>
+                                ${createInputElement('embeddings.provider', config.embeddings.provider)}
+                            </div>
+                            <div class="form-group">
+                                <label>Model</label>
+                                ${createInputElement('embeddings.model', config.embeddings.model)}
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'gateway': `
+                    <div id="gateway" class="settings-section">
+                        <h2>Gateway (API Server)</h2>
+                        <div class="form-group">
+                            <label>Port</label>
+                            ${createInputElement('gateway.port', config.gateway.port)}
+                        </div>
+                        <div class="form-group">
+                            <label>Host</label>
+                            ${createInputElement('gateway.host', config.gateway.host)}
+                        </div>
+                        <div class="form-group">
+                            <label>Web UI Token</label>
+                            <span class="description">The authentication token required to access this UI.</span>
+                            ${createInputElement('gateway.web_ui_token', config.gateway.web_ui_token)}
+                        </div>
+                        <div class="form-group">
+                            <label>Disable Access Log</label>
+                            ${createInputElement('gateway.disable_access_log', config.gateway.disable_access_log)}
+                        </div>
+                        
+                        <h2 style="margin-top: 30px;">Sandbox</h2>
+                        <div class="form-group">
+                            <label>Enabled</label>
+                            ${createInputElement('sandbox.enabled', config.sandbox.enabled)}
+                        </div>
+                        <div class="form-group">
+                            <label>Allowed Imports</label>
+                            ${createInputElement('sandbox.allowed_imports', config.sandbox.allowed_imports)}
+                        </div>
+                    </div>
+                `,
+                'pacts': `
+                    <div id="pacts" class="settings-section">
+                        <h2>Communication Pacts</h2>
+                        
+                        <div class="nested-group">
+                            <h3>Discord Integration</h3>
+                            <div class="form-group">
+                                <label>Enabled</label>
+                                ${createInputElement('pacts.discord.enabled', config.pacts.discord.enabled)}
+                            </div>
+                            <div class="form-group">
+                                <label>Bot Token</label>
+                                <span class="description">Keep this secret!</span>
+                                <input type="password" class="form-control" data-path="pacts.discord.token" value="${config.pacts.discord.token || ''}">
+                            </div>
+                            <div class="form-group">
+                                <label>Bot Loop Limit</label>
+                                ${createInputElement('pacts.discord.bot_loop_limit', config.pacts.discord.bot_loop_limit)}
+                            </div>
+                            <div class="form-group">
+                                <label>Allowed Channels (IDs)</label>
+                                ${createInputElement('pacts.discord.allowed_channels', config.pacts.discord.allowed_channels)}
+                            </div>
+                            <div class="form-group">
+                                <label>Allowed Users (IDs)</label>
+                                ${createInputElement('pacts.discord.allowed_users', config.pacts.discord.allowed_users)}
+                            </div>
+                        </div>
+
+                        <div class="nested-group">
+                            <h3>Telegram Integration</h3>
+                            <div class="form-group">
+                                <label>Enabled</label>
+                                ${createInputElement('pacts.telegram.enabled', config.pacts.telegram.enabled)}
+                            </div>
+                            <div class="form-group">
+                                <label>Bot Token</label>
+                                <input type="password" class="form-control" data-path="pacts.telegram.token" value="${config.pacts.telegram.token || ''}">
+                            </div>
+                        </div>
+                    </div>
+                `,
+                'keys': `
+                    <div id="keys" class="settings-section">
+                        <h2>API Keys</h2>
+                        <span class="description" style="display:block; margin-bottom: 20px;">Provide tokens for active providers to allow the agent access to external models or tools.</span>
+                        ${Object.keys(config.keys).map(keyName => `
+                            <div class="form-group">
+                                <label>${keyName.charAt(0).toUpperCase() + keyName.slice(1)} Key</label>
+                                <input type="password" class="form-control" data-path="keys.${keyName}" value="${config.keys[keyName] || ''}" placeholder="Not set">
+                            </div>
+                        `).join('')}
+                    </div>
+                `
+            };
+
+            container.innerHTML = `
+                <form id="settings-form">
+                    ${sections.general}
+                    ${sections.agents}
+                    ${sections.models}
+                    ${sections.gateway}
+                    ${sections.pacts}
+                    ${sections.keys}
+                    
+                    <div class="actions-bar">
+                        <button type="button" class="btn" onclick="loadConfig()">Discard</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            `;
+
+            // Hand over submit event
+            document.getElementById('settings-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await saveConfig();
+            });
+        }
+
+        // Sidebar logic
+        function switchSection(sectionId) {
+            document.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+
+            document.querySelectorAll('.section-nav').forEach(s => s.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Load config from backend
+        async function loadConfig() {
+            if (!authToken) { showLogin(); return; }
+            try {
+                const response = await fetchAuth('/api/settings');
+                const data = await response.json();
+                currentConfig = data;
+                renderForm(data);
+            } catch (e) {
+                console.error("Failed to load settings:", e);
+                if (e.message !== "Unauthorized" && e.message !== "No Token") {
+                    document.getElementById('form-container').innerHTML = `<div style="color:red;">Error loading settings: ${e.message}</div>`;
+                }
+            }
+        }
+
+        // Helper to update deeply nested object from dot string ("agents.models.smart_model.model")
+        function setNestedValue(obj, path, value) {
+            // Check if path contains array indexing
+            let parts = path.split(/(?=\[)|(?<=\])|\./).filter(p => p !== '');
+            let current = obj;
+
+            for (let i = 0; i < parts.length - 1; i++) {
+                let part = parts[i];
+                if (part.startsWith('[')) part = part.slice(1, -1); // Remove brackets
+
+                if (current[part] === undefined) {
+                    // Next part dictates object or array
+                    let nextPart = parts[i + 1];
+                    current[part] = nextPart.startsWith('[') ? [] : {};
+                }
+                current = current[part];
+            }
+
+            let lastPart = parts[parts.length - 1];
+            if (lastPart.startsWith('[')) lastPart = lastPart.slice(1, -1);
+
+            current[lastPart] = value;
+        }
+
+        // Gather UI changes and POST back
+        async function saveConfig() {
+            const inputs = document.querySelectorAll('#settings-form [data-path]');
+            let newConfig = JSON.parse(JSON.stringify(currentConfig)); // deep copy
+
+            // Reconstruct array values specifically first to avoid lingering dead indexes
+            const arrayContainers = document.querySelectorAll('.array-container');
+            arrayContainers.forEach(container => {
+                const arrPath = container.getAttribute('data-array-path');
+                const vals = Array.from(container.querySelectorAll('.array-val')).map(inp => inp.value);
+                setNestedValue(newConfig, arrPath, vals);
+            });
+
+            // Gather primitive inputs (ignoring nested arrays elements which are handled above)
+            inputs.forEach(input => {
+                const path = input.getAttribute('data-path');
+                if (path.includes('[')) return; // Handled by array gatherer
+
+                let val;
+                if (input.type === 'checkbox') {
+                    val = input.checked;
+                } else if (input.type === 'number') {
+                    val = parseFloat(input.value);
+                    if (isNaN(val)) val = null;
+                } else {
+                    val = input.value === "" ? null : input.value;
+                }
+                setNestedValue(newConfig, path, val);
+            });
+
+            try {
+                const response = await fetchAuth('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newConfig)
+                });
+
+                if (response.ok) {
+                    showToast("Settings saved successfully!", "success");
+                    await loadConfig(); // Refresh to catch normalized values
+                } else {
+                    const err = await response.json();
+                    showToast(err.detail || "Failed to save settings", "error");
+                }
+            } catch (e) {
+                console.error("Save error:", e);
+                showToast("Connection error while saving.", "error");
+            }
+        }
+
+        function showToast(msg, type) {
+            const toast = document.getElementById("toast");
+            toast.textContent = msg;
+            toast.className = "show " + type;
+            setTimeout(() => { toast.className = toast.className.replace("show " + type, ""); }, 3000);
+        }
+
+        // Init
+        loadConfig();
+    </script>
+</body>
+
+</html>

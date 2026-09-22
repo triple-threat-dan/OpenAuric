@@ -167,8 +167,7 @@ def test_close_session_missing(router, caplog):
     with caplog.at_level(logging.WARNING):
         closed_sid = router.close_session(context)
         assert closed_sid is None
-        assert "No active session to close" in caplog.text
-
+        assert "No active session found to close" in caplog.text
 
 def test_close_all_sessions(router):
     router.get_active_session_id("c1")

@@ -7,9 +7,11 @@
 <!--
 ### 📋 Instructions for the Agent
 - ALL reminders, alarms, one-time tasks, and recurring tasks go in this file.
-- Do NOT write reminders to MEMORY.md, daily logs (YYYY-MM-DD.md), or any other file.
-- Do NOT track task progress here — use FOCUS.md for that.
-- Do NOT modify this file unless the user asks you to add, modify, or remove tasks.
+- **STATE TRACKING**: When you complete a **Recurring Task**, you MUST append a `[LAST COMPLETED: YYYY-MM-DD]` tag to the end of that task line (or update the existing tag if one is present).
+- Before running a recurring task, check for a completion tag for the current time period. If present, skip it.
+- After completing a one-time reminder, remove it from the `One-time Reminders` section.
+- Do NOT track task progress here — use this file ONLY for definitions and final completion tags.
+- Do NOT modify this file unless the user asks you to add, modify, or remove tasks, or when adding completion tags.
 - When adding a new task, clarify with the user: What exactly? When? Recurring or one-time?
 -->
 

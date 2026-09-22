@@ -1,12 +1,15 @@
-[![Python Tests (uv)](https://github.com/triple-threat-dan/OpenAuric/actions/workflows/tests.yaml/badge.svg)](https://github.com/triple-threat-dan/OpenAuric/actions/workflows/tests.yaml)
+
 
 <p align="center">
   <img src="ALISS_AURIC.png" alt="auric, the recursive agentic warlock">
-</p>
+  <h1>OpenAuric: The Recursive Agentic Warlock</h1>
+  <p>
+    <a href="https://github.com/triple-threat-dan/OpenAuric/actions/workflows/tests.yaml"><img src="https://github.com/triple-threat-dan/OpenAuric/actions/workflows/tests.yaml/badge.svg" alt="Python Tests (uv)"></a>
+    <img src="https://img.shields.io/badge/python-≥3.11-blue" alt="Python">
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  </p>
+</div>
 
-# OpenAuric
-
-> **The Recursive Agentic Warlock.**
 > *Invoke the Pact. Automate the Realm.*.
 
 **OpenAuric** is a lightweight, local, autonomous AI agent architecture designed for developers who need more than a chatbot. It is a **Recursive Language Model (RLM)** system that manages its own context, writes its own tools in *The Grimoire*, and persists memory through a structured file system.
