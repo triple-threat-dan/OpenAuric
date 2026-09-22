@@ -65,16 +65,25 @@ Instructions here.
     assert "query" in spell["parameters"]["properties"]
     assert spell["instructions"] == "Instructions here."
 
+import os
+
 def test_get_internal_tools_context():
     config = AuricConfig()
     registry = ToolRegistry(config)
-    
+
     context = registry.get_internal_tools_context()
+
     assert "## Internal Standard Tools" in context
     assert "read_file" in context
     assert "write_file" in context
-    assert "execute_powershell" in context
-    # Check if we have descriptions, not just names
+
+    if os.name == "nt":
+        assert "execute_powershell" in context
+        assert "execute_bash" not in context
+    else:
+        assert "execute_bash" in context
+        assert "execute_powershell" not in context
+
     assert "Read the contents of a text file" in context
 
 from unittest.mock import AsyncMock, MagicMock
